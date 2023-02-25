@@ -1,5 +1,16 @@
 # Paper Summary
-- Our modifications are simple, they include: (1) training the model longer, with bigger batches, over more data; (2) removing the next sentence prediction objective; (3) training on longer se- quences; and (4) dynamically changing the mask- ing pattern applied to the training data. We also collect a large new dataset (CC-NEWS) of compa- rable size to other privately used datasets, to better control for training set size effects. In summary, the contributions of this paper are: (1) We present a set of important BERT de- sign choices and training strategies and introduce alternatives that lead to better downstream task performance; (2) We use a novel dataset, CC- NEWS, and confirm that using more data for pre- training further improves performance on down- stream tasks; (3) Our training improvements show that masked language model pretraining, under the right design choices, is competitive with all other recently published methods. In the original implementation, random mask- ing and replacement is performed once in the be- ginning and saved for the duration of training, al- though in practice, data is duplicated so the mask is not always the same for every training sentence
+- Our modifications are simple, they include:
+    - Training the model longer, with bigger batches, over more data;
+    - Removing the next sentence prediction objective;
+    - Training on longer sequences;
+    - Dynamically changing the masking pattern applied to the training data.
+- The contributions of this paper are: (1) We present a set of important BERT design choices and training strategies and introduce alternatives that lead to better downstream task performance;
+## Train
+### Datasets
+- We also collect a large new dataset (CC-NEWS) of comparable size to other privately used datasets, to better control for training set size effects.
+- We confirm that using more data for pretraining further improves performance on downstream tasks.
+### MLM
+- Our training improvements show that masked language model pretraining, under the right design choices, is competitive with all other recently published methods. **In the original implementation, random masking and replacement is performed once in the beginning and saved for the duration of training, although in practice, data is duplicated so the mask is not always the same for every training sentence.**
 
 # RoBERTa
 - Reference: https://www.youtube.com/watch?v=_FUXSTK_Xqg&t=672s
