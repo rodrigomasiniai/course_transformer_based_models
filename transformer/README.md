@@ -1,4 +1,4 @@
-- Codes are from: https://github.com/jadore801120/attention-is-all-you-need-pytorch/
+- Code based on; https://github.com/jadore801120/attention-is-all-you-need-pytorch/
 
 # Paper Summary
 - [Attention Is All You Need](https://arxiv.org/pdf/1706.03762.pdf)
