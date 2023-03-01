@@ -1,4 +1,3 @@
-
 # Transformer
 - References: https://en.wikipedia.org/wiki/Transformer_(machine_learning_model), https://wikidocs.net/31379, https://www.tensorflow.org/text/tutorials/transformer
 - *A transformer is a deep learning model that adopts the mechanism of self-attention, differentially weighting the significance of each part of the input data. It is used primarily in the field of natural language processing (NLP) and in computer vision (CV).*
