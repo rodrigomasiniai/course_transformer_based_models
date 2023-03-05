@@ -1,12 +1,12 @@
 # Paper Summary
 - [RoBERTa: A Robustly Optimized BERT Pretraining Approach](https://arxiv.org/pdf/1907.11692.pdf)
-- Reference: [[Yonsei NLP Study] RoBERTa 발표](https://www.youtube.com/watch?v=_FUXSTK_Xqg&t=672s)
 - Our modifications are simple, they include:
     - Training the model longer, with bigger batches, over more data;
     - Removing the next sentence prediction objective;
     - Training on longer sequences;
     - Dynamically changing the masking pattern applied to the training data.
 - The contributions of this paper are: (1) We present a set of important BERT design choices and training strategies and introduce alternatives that lead to better downstream task performance;
+- RoBERTa is trained with dynamic masking, FULL-SENTENCES without NSP loss, large mini-batches and a larger byte-level BPE.
 ## Training
 - ***Past work in Neural Machine Translation has shown that training with very large mini-batches can both improve optimization speed and end-task performance when the learning rate is increased appropriately (Ott et al., 2018)***. Recent work has shown that BERT is also amenable to large batch training (You et al., 2019). Devlin et al. (2019) originally trained BERT-BASE for 1M steps with a batch size of 256 sequences. This is equivalent in computational cost, via gradient accumulation, to training for 125K steps with a batch size of 2K sequences, or for 31K steps with a batch size of 8K. ***We observe that training with large batches improves perplexity for the masked language modeling objective, as well as end-task accuracy. Large batches are also easier to parallelize via distributed data parallel training***, and in later experiments we train with batches of 8K sequences.
 ### Datasets
@@ -35,6 +35,10 @@
     - We evaluate on two versions of SQuAD: V1.1 and V2.0 (Rajpurkar et al., 2016, 2018). In V1.1 the context always contains an answer, whereas in V2.0 some questions are not answered in the provided context, making the task more challenging. For SQuAD V1.1 we adopt the same span prediction method as BERT (Devlin et al., 2019). ***For SQuAD V2.0, we add an additional binary classifier to predict whether the question is answerable, which we train jointly by summing the classification and span loss terms. During evaluation, we only predict span indices on pairs that are classified as answerable.***
 ## Architecture
 - We keep the model architecture fixed. Specifically, we begin by training BERT models with the same configuration as BERT-BASE
+## Tokenization
+-Radford et al. (2019) introduce a clever implementation of BPE that uses bytes instead of unicode characters as the base subword units. Using bytes makes it possible to learn a subword vocabulary of a modest size (50K units) ***that can still encode any input text without introducing any "unknown" tokens.***
+- The original BERT implementation (Devlin et al., 2019) uses a character-level BPE vocabulary of size 30K, which is learned after preprocessing the input with heuristic tokenization rules. Following Radford et al. (2019), ***we instead consider training BERT with a larger byte-level BPE vocabulary containing 50K subword units, without any additional preprocessing or tokenization of the input. This adds approximately 15M and 20M additional parameters for BERT-BASE and BERT-LARGE, respectively.***
+- ***Early experiments revealed only slight differences between these encodings, with the Radford et al. (2019) BPE achieving slightly worse end-task performance on some tasks. Nevertheless, we believe the advantages of a universal encoding scheme outweighs the minor degredation in performance and use this encoding in the remainder of our experiments.***
 
 # Summary
 - Training the model longer with more data (16GB -> 160GB)
