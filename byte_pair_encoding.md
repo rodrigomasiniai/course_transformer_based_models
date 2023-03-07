@@ -7,3 +7,16 @@
 ## Byte-level Byte Pair Encoding (BBPE)
 - [Neural Machine Translation with Byte-Level Subwords](https://arxiv.org/pdf/1909.03341.pdf)
 
+# UTF-8
+- Reference: https://en.m.wikipedia.org/wiki/UTF-8
+- UTF-8 is capable of encoding all 1,112,064[a] valid character code points in Unicode using one to four one-byte (8-bit) code units.
+- The "x" characters are replaced by the bits of the code point
+    - Code point ↔ UTF-8 conversion
+        | First code point | Last code point | Byte 1 | Byte 2 | Byte 3 | Byte 4 | Code points |
+        | - | - | - | - | - | - | - |
+        | U+0000 | U+007F | 0xxxxxxx | | | | 128 |
+        | U+0080 | U+07FF | 110xxxxx | 10xxxxxx | | |1,920 |
+        | U+0800 | U+FFFF | 1110xxxx | 10xxxxxx | 10xxxxxx | | 61,440 |
+        | U+10000 | U+10FFFF | 11110xxx | 10xxxxxx | 10xxxxxx | 10xxxxxx | 1,048,576 |
+
+- 2진수 접두어: 0b, 8진수 접두어: 0o, 16진수 접두어: 0x
