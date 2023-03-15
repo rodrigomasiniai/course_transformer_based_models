@@ -15,9 +15,9 @@
     $$L_{1}(\mathcal{U}) = \sum_{i}\log P(u_{i} \mid u_{i − k}, \ldots , u_{i - 1}; Θ)$$
     - where $k$ is the size of the context window, and the conditional probability $P$ is modeled using a neural network with parameters $Θ$.
 - Supervised fine-tuning
-    - After training the model with the objective in Eq. 1, we adapt the parameters to the supervised target task. We assume a labeled dataset $\mathcal{C}$, where each instance consists of a sequence of input tokens, $x_{1}, \ldots, x_{m}$, along with a label $y$. The inputs are passed through our pre-trained model to obtain the final transformer block’s activation $h^{m} _{l}$, ***which is then fed into an added linear output layer with parameters*** $W_{y}$ ***to predict*** $y$***:***
+    - After training the model with the objective in Eq. 1, we adapt the parameters to the supervised target task. We assume a labeled dataset $\mathcal{C}$, where each instance consists of a sequence of input tokens, $x_{1}, \ldots, x_{m}$, along with a label $y$. The inputs are passed through our pre-trained model to obtain the final transformer block’s activation $h^{m}_{l}$, ***which is then fed into an added linear output layer with parameters*** $W_{y}$ ***to predict*** $y$***:***
     - Equation 3
-    $$P(y \mid x_{1}, \ldots, x_{m}) = softmax(h^{m} _{l} W_{y})$$
+    $$P(y \mid x_{1}, \ldots, x_{m}) = softmax(h^{m}_{l} W_{y})$$
     - This gives us the following objective to maximize:
     - Equation 4
     $$L_{2}(\mathcal{C}) = \sum_{(x,y)}\log P(y \mid x_{1}, \ldots, x_{m})$$
@@ -32,9 +32,11 @@
 - For the activation function, we used the Gaussian Error Linear Unit (GELU).
 - ***We used learned position embeddings instead of the sinusoidal version proposed in the original work.***
 - Equation 2
-$$h_{0} = UW_{e} + W_{p}$$
-$$h_{i} = transformer\textunderscore block(h_{i - 1})\ \ \ \ \forall i \in [1, n]$$
-$$P(u) = softmax(h_{n}W^{T}_{e})$$
+```math
+h_{0} = UW_{e} + W_{p
+h_{i} = transformer\textunderscore block(h_{i - 1})\ \ \ \ \forall i \in [1, n]
+P(u) = softmax(h_{n}W^{T}_{e})
+```
 - (Comment: 논문 속 수식의 $l$를 $i$로 변경했습니다.)
 - ***where*** $U = (u_{-k}, \ldots , u_{−1})$ ***is the context vector of tokens,*** $n$ ***is the number of layers,*** $W_{e}$ ***is the token embedding matrix, and*** $W_{p}$ ***is the position embedding matrix.***
 ## Training
@@ -51,7 +53,7 @@ $$P(u) = softmax(h_{n}W^{T}_{e})$$
     - <img src="https://i.imgur.com/MYuLqFT.png" width="800">
     - For some tasks, like text classification, we can directly fine-tune our model as described above. Certain other tasks, like question answering or textual entailment, have structured inputs such as ordered sentence pairs, or triplets of document, question, and answers. ***Since our pre-trained model was trained on contiguous sequences of text, we require some modifications to apply it to these tasks. We use a traversal-style approach, where we convert structured inputs into an ordered sequence that our pre-trained model can process. These input transformations allow us to avoid making extensive changes to the architecture across tasks. All transformations include adding randomly initialized start and end tokens (`<s>`, `<e>`).***
     - ***For entailment tasks, we concatenate the premise*** $p$ ***and hypothesis*** $h$ ***token sequences, with a delimiter token (`$`) in between.***
-    - ***For similarity tasks, there is no inherent ordering of the two sentences being compared. To reflect this, we modify the input sequence to contain both possible sentence orderings (with a delimiter in between) and process each independently to produce two sequence representations*** $h^{m} _{l}$ ***which are added element-wise before being fed into the linear output layer.***
+    - ***For similarity tasks, there is no inherent ordering of the two sentences being compared. To reflect this, we modify the input sequence to contain both possible sentence orderings (with a delimiter in between) and process each independently to produce two sequence representations*** $h^{m}_{l}$ ***which are added element-wise before being fed into the linear output layer.***
     - ***For question answering and commonsense reasoning, we are given a context document*** $z$***, a question*** $q$***, and a set of possible answers*** $\{a_{k}\}$***. We concatenate the document context and question with each possible answer, adding a delimiter token in between to get*** $[z; q; \$ ; a_{k}]$***. Each of these sequences are processed independently with our model and then normalized via a softmax layer to produce an output distribution over possible answers.***
     - Fine-tuning details Unless specified, we reuse the hyperparameter settings from unsupervised pre-training.
 - ***We use a linear learning rate decay schedule with warmup over 0.2% of training.*** $\lambda$ ***was set to 0.5.***
