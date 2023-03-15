@@ -40,7 +40,7 @@ $$P(u) = softmax(h_{n}W^{T}_{e})$$
 - We employ a two-stage training procedure. First, we use a language modeling objective on the unlabeled data to learn the initial parameters of a neural network model. Subsequently, we adapt these parameters to a target task using the corresponding supervised objective.
 - Optimizer
     - ***We used the Adam optimization scheme with a max learning rate of 2.5e-4. The learning rate was increased linearly from zero over the first 2000 updates and annealed to 0 using a cosine schedule.***
-- ***We train for 100 epochs on minibatches of 64 randomly sampled, contiguous sequences of 512 tokens.*** Since layernorm is used extensively throughout the model, a simple weight initialization of $\matchcal{N}(0, 0.02)$ was sufficient.
+- ***We train for 100 epochs on minibatches of 64 randomly sampled, contiguous sequences of 512 tokens.*** Since layernorm is used extensively throughout the model, a simple weight initialization of $\mathcalcal{N}(0, 0.02)$ was sufficient.
 - Tokenization
     - We used a bytepair encoding (BPE) vocabulary with 40,000 merges [53].
 - ***We add dropout to the classifier with a rate of 0.1.***
