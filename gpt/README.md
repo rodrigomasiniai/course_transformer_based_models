@@ -48,7 +48,7 @@ $$P(u) = softmax(h_{n}W^{T}_{e})$$
 - ***For most tasks, we use a learning rate of 6.25e-5 and a batchsize of 32.*** Our model fine-tunes quickly and 3 epochs of training was sufficient for most cases.
 ### Finue-tune
 - Figure 1. Architecture for fune-tunning
-    - <img src="https://i.imgur.com/MYuLqFT.png" width="800">
+    - <img src="https://i.imgur.com/I5YUyLd.png" width="800">
     - For some tasks, like text classification, we can directly fine-tune our model as described above. Certain other tasks, like question answering or textual entailment, have structured inputs such as ordered sentence pairs, or triplets of document, question, and answers. ***Since our pre-trained model was trained on contiguous sequences of text, we require some modifications to apply it to these tasks. We use a traversal-style approach, where we convert structured inputs into an ordered sequence that our pre-trained model can process. These input transformations allow us to avoid making extensive changes to the architecture across tasks. All transformations include adding randomly initialized start and end tokens (`<s>`, `<e>`).***
     - ***For entailment tasks, we concatenate the premise*** $p$ ***and hypothesis*** $h$ ***token sequences, with a delimiter token (`$`) in between.***
     - ***For similarity tasks, there is no inherent ordering of the two sentences being compared. To reflect this, we modify the input sequence to contain both possible sentence orderings (with a delimiter in between) and process each independently to produce two sequence representations*** $h^{m}_{l}$ ***which are added element-wise before being fed into the linear output layer.***
