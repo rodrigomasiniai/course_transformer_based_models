@@ -5,11 +5,13 @@ import torch.nn as nn
 import torch.functional as F
 
 
+
+
 class ScaledDotProductAttention(nn.Module):
-    def __init__(self, temperature, attn_dropout=0.1):
+    def __init__(self, temperature, dropout=0.1):
         super().__init__()
         self.temperature = temperature
-        self.dropout = nn.Dropout(attn_dropout)
+        self.dropout = nn.Dropout(dropout)
 
     def forward(self, Q, K, V, mask=None):
         attn_scores = torch.matmul(Q, K.transpose(1, 2)) / self.temperature
@@ -24,9 +26,9 @@ class ScaledDotProductAttention(nn.Module):
 
 
 class MultiHeadAttention(nn.Module):
-    def __init__(self, n_heads, d_model, dropout=0.1):
+    def __init__(self, n_heads=12, d_model=768, dropout=0.1):
         super().__init__()
-        n_heads = 8 # `h`
+        # n_heads = 8 # `h`
         d_k = d_v = d_model // n_heads
         
         self.n_heads = n_heads
@@ -50,12 +52,12 @@ class MultiHeadAttention(nn.Module):
 
 
 class PositionwiseFeedForward(nn.Module):
-    def __init__(self, d_model, d_ff=2048):
+    def __init__(self, d_model=768, inner_dim=3072):
         super().__init__()
 
-        self.w1 = nn.Linear(d_model, d_ff)
+        self.w1 = nn.Linear(d_model, inner_dim)
         self.relu = nn.ReLU()
-        self.w2 = nn.Linear(d_ff, d_model)
+        self.w2 = nn.Linear(inner_dim, d_model)
 
     def forward(self, x):
         x = self.w1(x)
@@ -65,7 +67,7 @@ class PositionwiseFeedForward(nn.Module):
 
 
 class Decoder(nn.Module):
-    def __init__(self, n_heads, d_model, n_layers=6):
+    def __init__(self, n_heads=12, d_model=768, n_layers=12):
         super().__init__()
 
         self.n_heads = n_heads
@@ -91,15 +93,18 @@ class Decoder(nn.Module):
 
 
 class GPT(nn.Module):
-    def __init__(self, vocab_size, d_model, n_heads, n_layers, seq_len):
+    def __init__(self, vocab_size, max_len=512, n_heads=12, d_model=768, n_layers=12):
         super().__init__()
 
         self.embedding = nn.Embedding(num_embeddings=vocab_size, embedding_dim=d_model)
-        self.positional_encoding = PositionalEncoding(d_model=d_model, seq_len=seq_len)
+        self.position_embedding = PositionalEncoding(d_model=d_model, max_len=max_len)
         self.decoder = Decoder(n_heads=n_heads, d_model=d_model, n_layers=n_layers)
     
     def forward(self, x):
         x = self.embedding(x)
-        x += self.positional_encoding(x)
+        x += self.position_embedding(x)
         x, attn_weights = self.decoder(x)
         return x, attn_weights
+
+
+criterion_lm = torch.nn.CrossEntropyLoss()

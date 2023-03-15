@@ -6,6 +6,19 @@ import torch.nn.functional as F
 import numpy as np
 
 
+""" sinusoid position embedding """
+def get_sinusoid_encoding_table(n_seq, d_hidn):
+    def cal_angle(position, i_hidn):
+        return position / np.power(10000, 2 * (i_hidn // 2) / d_hidn)
+    def get_posi_angle_vec(position):
+        return [cal_angle(position, i_hidn) for i_hidn in range(d_hidn)]
+
+    pe_mat = np.array([get_posi_angle_vec(i_seq) for i_seq in range(n_seq)])
+    pe_mat[:, 0::2] = np.sin(pe_mat[:, 0::2])  # even index sin 
+    pe_mat[:, 1::2] = np.cos(pe_mat[:, 1::2])  # odd index cos
+    return pe_mat
+
+
 class PositionalEncoding(nn.Module):
     def __init__(self, d_model, seq_len):
         super().__init__()
