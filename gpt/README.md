@@ -15,9 +15,9 @@
     $$L_{1}(\mathcal{U}) = \sum_{i}\log P(u_{i} | u_{i − k}, \ldots , u_{i - 1}; Θ)$$
     - where $k$ is the size of the context window, and the conditional probability $P$ is modeled using a neural network with parameters $Θ$.
 - Supervised fine-tuning
-    - After training the model with the objective in Eq. 1, we adapt the parameters to the supervised target task. We assume a labeled dataset $\mathcal{C}$, where each instance consists of a sequence of input tokens, $x_{1}, \ldots, x_{m}$, along with a label $y$. The inputs are passed through our pre-trained model to obtain the final transformer block’s activation $h^{m}_l$, ***which is then fed into an added linear output layer with parameters*** $W_{y}$ ***to predict*** $y$***:***
+    - After training the model with the objective in Eq. 1, we adapt the parameters to the supervised target task. We assume a labeled dataset $\mathcal{C}$, where each instance consists of a sequence of input tokens, $x_{1}, \ldots, x_{m}$, along with a label $y$. The inputs are passed through our pre-trained model to obtain the final transformer block’s activation $h^{m}_{l}$, ***which is then fed into an added linear output layer with parameters*** $W_{y}$ ***to predict*** $y$***:***
     - Equation 3
-    $$P(y | x_{1}, \ldots, x_{m}) = softmax(h^{m}_l W_{y})$$
+    $$P(y | x_{1}, \ldots, x_{m}) = softmax(h^{m}_{l} W_{y})$$
     - This gives us the following objective to maximize:
     - Equation 4
     $$L_{2}(\mathcal{C}) = \sum_{(x,y)}\log P(y | x_{1}, \ldots, x_{m})$$
@@ -33,9 +33,9 @@
 - ***We used learned position embeddings instead of the sinusoidal version proposed in the original work.***
 - Equation 2
 $$h_{0} = UW_{e} + W_{p}$$
-$$h_{i} = transformer\_block(h_{i - 1})\ \ \ \ \forall i \in [1, n]$$
+$$h_{i} = \text{transformer_block}(h_{i - 1})\ \ \ \ \forall i \in [1, n]$$
 $$P(u) = softmax(h_{n}W^{T}_{e})$$
-- (Comment: 논문 속 수식에서 약간의 변경이 있습니다.)
+- (Comment: 논문 속 수식의 $l$를 $i$로 변경했습니다.)
 - ***where*** $U = (u_{-k}, \ldots , u_{−1})$ ***is the context vector of tokens,*** $n$ ***is the number of layers,*** $W_{e}$ ***is the token embedding matrix, and*** $W_{p}$ ***is the position embedding matrix.***
 ## Training
 - We employ a two-stage training procedure. First, we use a language modeling objective on the unlabeled data to learn the initial parameters of a neural network model. Subsequently, we adapt these parameters to a target task using the corresponding supervised objective.
