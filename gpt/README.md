@@ -15,7 +15,7 @@
     $$L_{1}(\mathcal{U}) = \sum_{i}\log P(u_{i} \mid u_{i − k}, \ldots , u_{i - 1}; Θ)$$
     - where $k$ is the size of the context window, and the conditional probability $P$ is modeled using a neural network with parameters $Θ$.
 - Supervised fine-tuning
-    - After training the model with the objective in Eq. 1, we adapt the parameters to the supervised target task. We assume a labeled dataset $\mathcal{C}$, where each instance consists of a sequence of input tokens, $x_{1}, \ldots, x_{m}$, along with a label $y$. The inputs are passed through our pre-trained model to obtain the final transformer block’s activation $h^{m}_{l}$, ***which is then fed into an added linear output layer with parameters*** $W_{y}$ ***to predict*** $y$***:***
+    - After training the model with the objective in Eq. 1, we adapt the parameters to the supervised target task. We assume a labeled dataset $\mathcal{C}$, where each instance consists of a sequence of input tokens, $x_{1}, \ldots, x_{m}$, along with a label $y$. The inputs are passed through our pre-trained model to obtain the final transformer block’s activation $h^{m}_{l}$, ***which is then fed into an added linear output layer with parameters*** $W__{y}$ ***to predict*** $y$***:***
     - Equation 3
     $$P(y \mid x_{1}, \ldots, x_{m}) = softmax(h^{m}_{l} W_{y})$$
     - This gives us the following objective to maximize:
