@@ -35,12 +35,13 @@
 $$h_{0} = UW_{e} + W_{p}$$
 $$h_{i} = transformer\_block(h_{i - 1})\ \ \ \ \forall i \in [1, n]$$
 $$P(u) = softmax(h_{n}W^{T}_{e})$$
+- (Comment: 논문 속 수식에서 약간의 변경이 있습니다.)
 - ***where*** $U = (u_{-k}, \ldots , u_{−1})$ ***is the context vector of tokens,*** $n$ ***is the number of layers,*** $W_{e}$ ***is the token embedding matrix, and*** $W_{p}$ ***is the position embedding matrix.***
 ## Training
 - We employ a two-stage training procedure. First, we use a language modeling objective on the unlabeled data to learn the initial parameters of a neural network model. Subsequently, we adapt these parameters to a target task using the corresponding supervised objective.
 - Optimizer
     - ***We used the Adam optimization scheme with a max learning rate of 2.5e-4. The learning rate was increased linearly from zero over the first 2000 updates and annealed to 0 using a cosine schedule.***
-- ***We train for 100 epochs on minibatches of 64 randomly sampled, contiguous sequences of 512 tokens.*** Since layernorm is used extensively throughout the model, a simple weight initialization of $\mathcalcal{N}(0, 0.02)$ was sufficient.
+- ***We train for 100 epochs on minibatches of 64 randomly sampled, contiguous sequences of 512 tokens.*** Since layernorm is used extensively throughout the model, a simple weight initialization of $\mathcal{N}(0, 0.02)$ was sufficient.
 - Tokenization
     - We used a bytepair encoding (BPE) vocabulary with 40,000 merges [53].
 - ***We add dropout to the classifier with a rate of 0.1.***
