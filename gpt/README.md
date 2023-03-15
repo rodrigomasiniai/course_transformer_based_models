@@ -32,11 +32,9 @@
 - For the activation function, we used the Gaussian Error Linear Unit (GELU).
 - ***We used learned position embeddings instead of the sinusoidal version proposed in the original work.***
 - Equation 2
-```math
-h_{0} = UW_{e} + W_{p
-h_{i} = transformer\textunderscore block(h_{i - 1})\ \ \ \ \forall i \in [1, n]
-P(u) = softmax(h_{n}W^{T}_{e})
-```
+$$h_{0} = UW_{e} + W_{p}$$
+$$h_{i} = transformer\textunderscore block(h_{i - 1})\ \ \ \ \forall i \in [1, n]$$
+$$P(u) = softmax(h_{n}W^{T}_{e})$$
 - (Comment: 논문 속 수식의 $l$를 $i$로 변경했습니다.)
 - ***where*** $U = (u_{-k}, \ldots , u_{−1})$ ***is the context vector of tokens,*** $n$ ***is the number of layers,*** $W_{e}$ ***is the token embedding matrix, and*** $W_{p}$ ***is the position embedding matrix.***
 ## Training
