@@ -1,0 +1,4 @@
+- https://gaussian37.github.io/dl-pytorch-lr_scheduler/
+- $\eta_{max}$: Initial learning rate
+- $T_{cur}$: Number of epochs since the last restart
+- $T_{i}$: Number of epochs between two warm restarts in SGDR

@@ -38,13 +38,14 @@ $$P(u) = softmax(h_{n}W^{T}_{e})$$
 - (Comment: 논문 속 수식의 $l$를 $i$로 변경했습니다.)
 - ***where*** $U = (u_{-k}, \ldots , u_{−1})$ ***is the context vector of tokens,*** $n$ ***is the number of layers,*** $W_{e}$ ***is the token embedding matrix, and*** $W_{p}$ ***is the position embedding matrix.***
 ## Training
-- We employ a two-stage training procedure. First, we use a language modeling objective on the unlabeled data to learn the initial parameters of a neural network model. Subsequently, we adapt these parameters to a target task using the corresponding supervised objective.
-- Optimizer
-    - ***We used the Adam optimization scheme with a max learning rate of 2.5e-4. The learning rate was increased linearly from zero over the first 2000 updates and annealed to 0 using a cosine schedule.***
-- ***We train for 100 epochs on minibatches of 64 randomly sampled, contiguous sequences of 512 tokens.*** Since layernorm is used extensively throughout the model, a simple weight initialization of $\mathcal{N}(0, 0.02)$ was sufficient.
 - Tokenization
     - We used a bytepair encoding (BPE) vocabulary with 40,000 merges [53].
+- We employ a two-stage training procedure. First, we use a language modeling objective on the unlabeled data to learn the initial parameters of a neural network model. Subsequently, we adapt these parameters to a target task using the corresponding supervised objective.
+### Pre-training
+- ***We used the Adam optimization scheme with a max learning rate of 2.5e-4. The learning rate was increased linearly from zero over the first 2000 updates and annealed to 0 using a cosine schedule.***
+- ***We train for 100 epochs on minibatches of 64 randomly sampled, contiguous sequences of 512 tokens.*** Since layernorm is used extensively throughout the model, a simple weight initialization of $\mathcal{N}(0, 0.02)$ was sufficient.
 - ***We add dropout to the classifier with a rate of 0.1.***
+### Fine-tunning
 - ***For most tasks, we use a learning rate of 6.25e-5 and a batchsize of 32.*** Our model fine-tunes quickly and 3 epochs of training was sufficient for most cases.
 ### Finue-tune
 - Figure 1. Architecture for fune-tunning
