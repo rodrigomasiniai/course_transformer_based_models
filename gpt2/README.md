@@ -21,7 +21,7 @@
 ## Architecture
 - We use a Transformer [4] based architecture for our LMs. The model largely follows the details of the OpenAI GPT model [2] with a few modifications. ***Layer normalization [6] was moved to the input of each sub-block, similar to a pre-activation residual network [7] and an additional layer normalization was added after the final self-attention block. A modified initialization which accounts for the accumulation on the residual path with model depth is used. We scale the weights of residual layers at initialization by a factor of $\frac{1}{\sqrt{N}}$ where $N$ is the number of residual layers. The vocabulary is expanded to 50,257. We also increase the context size from 512 to 1024 tokens and a larger batchsize of 512 is used.***
 - Table 2. Model variants
-    - <img src="https://miro.medium.com/v2/resize:fit:618/format:webp/1*xfuKZBGFVfryzfi7smKTQg.png" width="200">
+    - <img src="https://user-images.githubusercontent.com/67457712/225798715-26a03efa-847d-48a4-b75e-3e7acd0d2d36.png" width="200">
     - The smallest model is equivalent to the original GPT, and the second smallest equivalent to the largest model from BERT [3]. ***Our largest model, which we call GPT-2***, has over an order of magnitude more parameters than GPT.
 ## Training
 ### Datasets
@@ -43,7 +43,7 @@
     - The Conversation Question Answering dataset (CoQA) consists of documents from 7 different domains paired with natural language dialogues between a question asker and a question answerer about the document. CoQA tests reading comprehension capabilities and also the ability of models to answer questions that depend on conversation history (such as "Why?").
 - Summarization
     - Table 4. Summarization evaluation
-        - <img src="https://velog.velcdn.com/images%2Fjody1188%2Fpost%2F647edc4f-97fd-4299-93b5-f268db46485c%2F%EC%8A%A4%ED%81%AC%EB%A6%B0%EC%83%B7%202022-03-18%20%EC%98%A4%ED%9B%84%206.52.06.png" width="300">
+        - <img src="https://user-images.githubusercontent.com/67457712/225798858-f7d16f81-9277-4e85-befd-064af4fb4224.png" width="300">
         - We test GPT-2’s ability to perform summarization on the CNN and Daily Mail dataset. ***To induce summarization behavior we add the text "TL;DR:" after the article and generate 100 tokens with Top-***$k$ ***random sampling with*** $k = 2$ ***which reduces repetition and encourages more abstractive summaries than greedy decoding. (Comment: Beam width를 2로 하는 Beam search를 사용했다는 것으로 이해됩니다.) We use the first 3 generated sentences in these 100 tokens as the summary.***
         - ***While qualitatively the generations resemble summaries, as shown in Table 14, they often focus on recent content from the article or confuse specific details such as how many cars were involved in a crash or whether a logo was on a hat or shirt. On the commonly reported ROUGE 1, 2, L metrics the generated summaries only begin to approach the performance of classic neural baselines and just barely outperforms selecting 3 random sentences from the article.***
         - GPT-2’s performance drops by 6.4 points on the aggregate metric when the task hint is removed which demonstrates the ability to invoke task specific behavior in a language model with natural language. (Comment: R-AVG를 보면 'GPT-2 TL; DR:' 대비 'GPT-2 no hint'의 성능이 하락했습니다.)
