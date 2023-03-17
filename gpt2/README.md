@@ -28,8 +28,29 @@
 - WebText
     - We created a new web scrape which emphasizes document quality. To do this we only scraped web pages which have been curated/filtered by humans.
     - Contains slightly over 8 million documents for a total of 40 GB of text. We removed all Wikipedia documents from WebText since it is a common data source for other datasets and could complicate analysis due to over lapping training data with test evaluation tasks.
-- Table 3
-    
+## Experiments
+- Table 3. Zero-shot transfer evaluation
+    - <img src="https://raw.githubusercontent.com/terrifyzhao/terrifyzhao.github.io/master/assets/img/2019-02-19-GPT2.0%E8%AE%BA%E6%96%87%E8%A7%A3%E8%AF%BB/pic2.jpg" width="700">
+    - ***Large improvements are noticed on small datasets such as Penn Treebank and WikiText-2 which have only 1 to 2 million training tokens. Large improvements are also noticed on datasets created to measure long-term dependencies like LAMBADA and the Children’s Book Test.***
+    - Our model is still significantly worse than prior work on the One Billion Word Benchmark. ***This is likely due to a combination of it being both the largest dataset and having some of the most destructive pre-processing - 1BW’s sentence level shuffling removes all long-range structure.***
+    - CBT
+        - The Children’s Book Test (CBT) was created to examine the performance of LMs on different categories of words: named entities, nouns, verbs, and prepositions. Rather than reporting perplexity as an evaluation metric, CBT reports accuracy on an automatically constructed cloze test where the task is to predict which of 10 possible choices for an omitted word is correct.
+    - LAMBADA
+        - The LAMBADA dataset tests the ability of systems to model long-range dependencies in text. The task is to predict the final word of sentences which require at least 50 tokens of context for a human to successfully predict.
+- Winsograd Schema Challenge
+    - The Winograd Schema challenge was constructed to measure the capability of a system to perform commonsense reasoning by measuring its ability to resolve ambiguities in text.
+- Reading Comprehension
+    - The Conversation Question Answering dataset (CoQA) consists of documents from 7 different domains paired with natural language dialogues between a question asker and a question answerer about the document. CoQA tests reading comprehension capabilities and also the ability of models to answer questions that depend on conversation history (such as "Why?").
+- Summarization
+    - Table 4. Summarization evaluation
+        - <img src="https://velog.velcdn.com/images%2Fjody1188%2Fpost%2F647edc4f-97fd-4299-93b5-f268db46485c%2F%EC%8A%A4%ED%81%AC%EB%A6%B0%EC%83%B7%202022-03-18%20%EC%98%A4%ED%9B%84%206.52.06.png" width="300">
+        - We test GPT-2’s ability to perform summarization on the CNN and Daily Mail dataset. ***To induce summarization behavior we add the text "TL;DR:" after the article and generate 100 tokens with Top-***$k$ ***random sampling with*** $k = 2$ ***which reduces repetition and encourages more abstractive summaries than greedy decoding. (Comment: Beam width를 2로 하는 Beam search를 사용했다는 것으로 이해됩니다.) We use the first 3 generated sentences in these 100 tokens as the summary.***
+        - ***While qualitatively the generations resemble summaries, as shown in Table 14, they often focus on recent content from the article or confuse specific details such as how many cars were involved in a crash or whether a logo was on a hat or shirt. On the commonly reported ROUGE 1, 2, L metrics the generated summaries only begin to approach the performance of classic neural baselines and just barely outperforms selecting 3 random sentences from the article.***
+        - GPT-2’s performance drops by 6.4 points on the aggregate metric when the task hint is removed which demonstrates the ability to invoke task specific behavior in a language model with natural language. (Comment: R-AVG를 보면 'GPT-2 TL; DR:' 대비 'GPT-2 no hint'의 성능이 하락했습니다.)
+- Translation
+    - ***In order to help GPT-2 infer that this is the desired task, we condition the language model on a context of example pairs of the format "english sentence = french sentence" and then after a final prompt of "english sentence =" we sample from the model with greedy decoding and use the first generated sentence as the translation.***
+    - On the WMT-14 English-French test set, GPT-2 gets 5 BLEU, which is slightly worse than a word-by-word substitution with a bilingual lexicon inferred in previous work on unsupervised word translation.
+    - On the WMT-14 French-English test set, 11.5 BLEU. This is much worse than the 33.5 BLEU of the current best unsupervised machine translation approach. ***Performance on this task was surprising to us, since we deliberately removed non-English webpages from WebText as a filtering step.***
 ## Experiments
 ## References
 - [1] [Deep contextualized word representations](https://arxiv.org/pdf/1802.05365.pdf)
