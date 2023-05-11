@@ -51,14 +51,14 @@
     - ***In order to help GPT-2 infer that this is the desired task, we condition the language model on a context of example pairs of the format "english sentence = french sentence" and then after a final prompt of "english sentence =" we sample from the model with greedy decoding and use the first generated sentence as the translation.***
     - On the WMT-14 English-French test set, GPT-2 gets 5 BLEU, which is slightly worse than a word-by-word substitution with a bilingual lexicon inferred in previous work on unsupervised word translation.
     - On the WMT-14 French-English test set, 11.5 BLEU. This is much worse than the 33.5 BLEU of the current best unsupervised machine translation approach. ***Performance on this task was surprising to us, since we deliberately removed non-English webpages from WebText as a filtering step.***
-## Experiments
 ## References
-- [1] [Deep contextualized word representations](https://arxiv.org/pdf/1802.05365.pdf)
-- [2] [Improving Language Understanding by Generative Pre-Training](https://s3-us-west-2.amazonaws.com/openai-assets/research-covers/language-unsupervised/language_understanding_paper.pdf)
-- [3] [BERT: Pre-training of Deep Bidirectional Transformers for Language Understanding](https://arxiv.org/pdf/1810.04805.pdf)
-- [4] [Attention Is All You Need](https://arxiv.org/pdf/1706.03762.pdf)
-- [5] [Multilingual Language Processing From Bytes](https://arxiv.org/pdf/1512.00103.pdf)
-- [6] [Layer Normalization](https://arxiv.org/pdf/1607.06450.pdf)
-- [7] [Identity Mappings in Deep Residual Networks](https://arxiv.org/pdf/1603.05027.pdf)
+- [Deep contextualized word representations](https://arxiv.org/pdf/1802.05365.pdf)
+- [Improving Language Understanding by Generative Pre-Training](https://s3-us-west-2.amazonaws.com/openai-assets/research-covers/language-unsupervised/language_understanding_paper.pdf)
+- [BERT: Pre-training of Deep Bidirectional Transformers for Language Understanding](https://arxiv.org/pdf/1810.04805.pdf)
+- [Attention Is All You Need](https://arxiv.org/pdf/1706.03762.pdf)
+- [Multilingual Language Processing From Bytes](https://arxiv.org/pdf/1512.00103.pdf)
+- [Layer Normalization](https://arxiv.org/pdf/1607.06450.pdf)
+- [Identity Mappings in Deep Residual Networks](https://arxiv.org/pdf/1603.05027.pdf)
 
-- Official repository: https://github.com/openai/gpt-2
+# Official Repository
+- https://github.com/openai/gpt-2

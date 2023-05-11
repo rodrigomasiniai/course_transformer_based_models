@@ -113,3 +113,25 @@ char.encode("utf-8")
 # "U+ACF0" -> 10 12 15 0
 bin(10)
 bin(12)
+
+
+
+
+# from tokenizers import Tokenizer, models, pre_tokenizers, decoders, trainers, processors
+
+# # Initialize a tokenizer
+# tokenizer = Tokenizer(models.BPE())
+
+# # Customize pre-tokenization and decoding
+# tokenizer.pre_tokenizer = pre_tokenizers.ByteLevel(add_prefix_space=True)
+# tokenizer.decoder = decoders.ByteLevel()
+# tokenizer.post_processor = processors.ByteLevel(trim_offsets=True)
+
+# # And then train
+# trainer = trainers.BpeTrainer(vocab_size=1000, min_frequency=2)
+# tokenizer.train(
+#     trainer,
+#     [
+#         "/Users/jongbeomkim/Desktop/workspace/transformer_based_models/gpt2/corpus.txt"
+#     ]
+# )
