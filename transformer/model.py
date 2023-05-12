@@ -5,6 +5,7 @@
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
+from einops import rearrange
 import numpy as np
 import math
 
@@ -12,23 +13,12 @@ import math
 D_MODEL = 512
 # BATCH_SIZE = 4096
 BATCH_SIZE = 16
-# SEq_LEN = 380
-SEq_LEN = 30
+# SEQ_LEN = 380
+SEQ_LEN = 30
 # vOCAB_SIZE = 37_000
-vOCAB_SIZE = 1000
+VOCAB_SIZE = 1000
 D_FF = 2048
 n_position=200
-# """ sinusoid position embedding """
-# def get_sinusoid_encoding_table(n_seq, d_hidn):
-#     def cal_angle(position, i_hidn):
-#         return position / np.power(10000, 2 * (i_hidn // 2) / d_hidn)
-#     def get_posi_angle_vec(position):
-#         return [cal_angle(position, i_hidn) for i_hidn in range(d_hidn)]
-
-#     pe_mat = np.array([get_posi_angle_vec(i_seq) for i_seq in range(n_seq)])
-#     pe_mat[:, 0::2] = np.sin(pe_mat[:, 0::2])  # even index sin 
-#     pe_mat[:, 1::2] = np.cos(pe_mat[:, 1::2])  # odd index cos
-#     return pe_mat
 
 
 class PositionalEncoding(nn.Module):
@@ -69,65 +59,52 @@ class Input(nn.Module):
         return x
 
 
-class ScaledDotProductAttention(nn.Module):
-    def __init__(self, temperature):
-        super().__init__()
-        self.temperature = temperature
-        self.dropout = nn.Dropout(0.1)
-
-    def forward(self, q, k, v, mask=None):
-        attn_scores = torch.matmul(q, k.transpose(1, 2)) # "MatMul" in "Figure 2" in the paper
-        attn_scores /= self.temperature # "Scale"
-        if mask is not None:
-            attn_scores.masked_fill_(mask=mask, value=-math.inf) # "Mask (opt.)"
-        attn_weights = F.softmax(attn_scores, dim=-1) # "Softmax"
-        attn_weights = self.dropout(attn_weights) # Not in the paper
-
-        x = torch.matmul(attn_weights, v) # MatMul
-        return x, attn_weights
-        # return x
-
-
 class MultiHeadAttention(nn.Module):
-    ### TO DO: 차원 수정!!
-    def __init__(self, n_heads, d_model):
+    def __init__(self, dim=D_MODEL, n_heads=8):
         super().__init__()
+    
+        self.dim = dim # $d_{model}$
         self.n_heads = n_heads # $h$
-        self.d_model = d_model
 
-        self.d_kv = d_model // n_heads # $d_{k}$, $d_{v}$
+        self.head_dim = dim // n_heads # $d_{k}$, $d_{v}$
 
-        self.w_q = nn.Linear(d_model, self.d_kv * n_heads, bias=False)
-        self.w_k = nn.Linear(d_model, self.d_kv * n_heads, bias=False)
-        self.w_v = nn.Linear(d_model, self.d_kv * n_heads, bias=False)
-        self.w_o = nn.Linear(self.d_kv * n_heads, d_model, bias=False)
+        self.w_q = nn.Linear(dim, dim, bias=False)
+        self.w_k = nn.Linear(dim, dim, bias=False)
+        self.w_v = nn.Linear(dim, dim, bias=False)
 
-        self.attn = ScaledDotProductAttention(temperature=self.d_kv ** 0.5)
+        self.softmax = nn.Softmax(dim=2)
+        self.dropout = nn.Dropout(0.1)
+        self.w_o = nn.Linear(dim, dim, bias=False)
 
-    def subsequent_info_mask(self, batch_size, seq_len, device):
+    def subsequent_info_mask(self, batch_size, src_seq_len, trg_seq_len):
         """ Prevent positions from attending to subsequent positions. """
-        mask = torch.tril(torch.ones(size=(seq_len, seq_len), device=device), diagonal=0).bool()
-        batched_mask = mask.unsqueeze(0).repeat(batch_size, 1, 1)
+        mask = torch.tril(torch.ones(size=(src_seq_len, trg_seq_len)), diagonal=0).bool()
+        batched_mask = mask.unsqueeze(0).unsqueeze(3).repeat(batch_size, 1, 1, self.n_heads)
         return batched_mask
 
     def forward(self, q, k, v, masked=False):
-        q, k, v = self.w_q(q), self.w_k(k), self.w_v(v)
         b, l, _ = q.shape
+        _, m, _ = k.shape
+
+        q, k, v = self.w_q(q), self.w_k(k), self.w_v(v)
+        q = q.view(b, l, self.head_dim, self.n_heads)
+        k = k.view(b, m, self.head_dim, self.n_heads)
+        v = v.view(b, m, self.head_dim, self.n_heads)
+
+        attn_score = torch.einsum("bldn,bmdn->blmn", q, k) # "MatMul" in "Figure 2" in the paper
         if masked:
-            subseq_mask = self.subsequent_info_mask(batch_size=b, seq_len=l, device=q.device)
-            x, attn_weights = self.attn(q=q, k=k, v=v, mask=subseq_mask)
-            # x = self.attn(q=q, k=k, v=v, mask=subseq_mask)
-        else:
-            x, attn_weights = self.attn(q=q, k=k, v=v)
-            # x = self.attn(q=q, k=k, v=v)
+            subseq_mask = self.subsequent_info_mask(batch_size=b, src_seq_len=l, trg_seq_len=m)
+            attn_score.masked_fill_(mask=subseq_mask, value=-math.inf) # "Mask (opt.)"
+        attn_score /= (self.head_dim ** 0.5) # "Scale"
+
+        attn_weight = self.softmax(attn_score) # "Softmax"
+        attn_weight = self.dropout(attn_weight) # Not in the paper
+
+        x = torch.einsum("blmn,bmdn->bldn", attn_weight, k) # "MatMul"
+        x = rearrange(x, "b l d n -> b l (d n)")
+
         x = self.w_o(x)
-        return x, attn_weights
-        # return x
-# seq = torch.randn(size=(BATCH_SIZE, SEq_LEN, D_MODEL))
-multi_head_attn = MultiHeadAttention(n_heads=8, d_model=D_MODEL)
-multi_head_attn
-# a, b = multi_head_attn(seq)
-# print(a.shape, b.shape)
+        return x
 
 
 class PositionwiseFeedForward(nn.Module):
@@ -146,13 +123,13 @@ class PositionwiseFeedForward(nn.Module):
 
 
 class EncoderLayer(nn.Module):
-    def __init__(self, n_heads, d_model):
+    def __init__(self, d_model, n_heads):
         super().__init__()
 
         self.n_heads = n_heads
         self.d_model = d_model
 
-        self.self_attn = MultiHeadAttention(n_heads=n_heads, d_model=d_model)
+        self.self_attn = MultiHeadAttention(dim=d_model, n_heads=n_heads)
         self.norm1 = nn.LayerNorm(d_model)
 
         self.ff = PositionwiseFeedForward(d_model=d_model)
@@ -161,7 +138,7 @@ class EncoderLayer(nn.Module):
         self.dropout = nn.Dropout(0.1)
 
     def forward(self, x):
-        attn_output, attn_weights = self.self_attn(q=x, k=x, v=x) # "Multi-Head Attention" in "Figure 1" in the paper
+        attn_output = self.self_attn(q=x, k=x, v=x) # "Multi-Head Attention" in "Figure 1" in the paper
         x += attn_output # "Add"
         x = self.norm1(x) # "& Norm"
 
@@ -169,7 +146,7 @@ class EncoderLayer(nn.Module):
         x += ff_output # "Add"
         x = self.norm2(x) # "& Norm"
         x = self.dropout(x) # Not in the paper
-        return x, attn_weights
+        return x
 
 
 class Encoder(nn.Module):
@@ -185,13 +162,14 @@ class Encoder(nn.Module):
 
         self.input = Input(vocab_size=src_vocab_size, d_model=d_model, seq_len=src_seq_len)
         self.enc_stack = nn.ModuleList(
-            [EncoderLayer(n_heads=n_heads, d_model=d_model) for _ in range(self.n_layers)]
+            [EncoderLayer(d_model=d_model, n_heads=n_heads) for _ in range(self.n_layers)]
         )
 
     def forward(self, x):
         x = self.input(x)
-        x, attn_weights = self.enc_stack(x)
-        return x, attn_weights
+        for enc_layer in self.enc_stack:
+            x = enc_layer(x)
+        return x
 
 
 class DecoderLayer(nn.Module):
@@ -201,10 +179,10 @@ class DecoderLayer(nn.Module):
         self.n_heads = n_heads
         self.d_model = d_model
 
-        self.self_attn = MultiHeadAttention(n_heads=n_heads, d_model=d_model)
+        self.self_attn = MultiHeadAttention(dim=d_model, n_heads=n_heads)
         self.norm1 = nn.LayerNorm(d_model)
 
-        self.enc_dec_attn = MultiHeadAttention(n_heads=n_heads, d_model=d_model)
+        self.enc_dec_attn = MultiHeadAttention(dim=d_model, n_heads=n_heads)
         self.norm2 = nn.LayerNorm(d_model)
 
         self.ff = PositionwiseFeedForward(d_model=d_model)
@@ -212,12 +190,12 @@ class DecoderLayer(nn.Module):
 
         self.dropout = nn.Dropout(0.1)
 
-    def forward(self, x, y):
-        attn_output, attn_weights1 = self.self_attn(q=x, k=x, v=x, masked=True) # "Masked Multi-Head Attention" in "Figure 1" in the paper
+    def forward(self, x, enc_output):
+        attn_output = self.self_attn(q=x, k=x, v=x) # "Masked Multi-Head Attention" in "Figure 1" in the paper
         x += attn_output # "Add"
         x = self.norm1(x) # "& Norm"
 
-        attn_output, attn_weights2 = self.enc_dec_attn(q=x, k=y, v=y) # "Multi-Head Attention"
+        attn_output = self.enc_dec_attn(q=x, k=enc_output, v=enc_output, masked=True) # "Multi-Head Attention"
         x += attn_output # "Add"
         x = self.norm2(x) # "& Norm"
 
@@ -226,7 +204,7 @@ class DecoderLayer(nn.Module):
         x = self.norm3(x) # "& Norm"
 
         x = self.dropout(x) # Not in the paper
-        return x, attn_weights1, attn_weights2
+        return x
 
 
 class Decoder(nn.Module):
@@ -244,13 +222,17 @@ class Decoder(nn.Module):
             [DecoderLayer(n_heads=n_heads, d_model=d_model) for _ in range(self.n_layers)]
         )
         self.linear = nn.Linear(d_model, trg_vocab_size)
+        self.softmax = nn.Softmax(dim=-1)
 
-    def forward(self, x, y):
+    def forward(self, x, enc_output):
+        # print(y)
         x = self.input(x)
-        x, attn_weights1, attn_weights2 = self.dec_stack(x)
+        for dec_layer in self.dec_stack:
+            x = dec_layer(x, enc_output=enc_output)
+            # print(x)
         x = self.linear(x)
-        x = F.softmax(x, dim=-1)
-        return x, attn_weights1, attn_weights2
+        x = self.softmax(x)
+        return x
 
 
 class Transformer(nn.Module):
@@ -262,70 +244,48 @@ class Transformer(nn.Module):
         src_seq_len,
         trg_seq_len,
         d_model,
+        n_heads=8,
         n_enc_layers=6,
         n_dec_layers=6,
-        n_heads=8
     ):
         super().__init__()
-        d_model=D_MODEL
-        src_vocab_size=1000
-        trg_vocab_size=800
-        src_seq_len=30
-        trg_seq_len=44
-        n_enc_layers=6
-        n_dec_layers=6
-        n_heads=8
 
-        encoder = Encoder(
+        self.enc = Encoder(
             src_vocab_size=src_vocab_size,
             src_seq_len=src_seq_len,
             n_heads=n_heads,
             d_model=d_model,
             n_layers=n_enc_layers
         )
-        encoder
-        decoder = Decoder(
+        self.dec = Decoder(
             trg_vocab_size=trg_vocab_size,
             trg_seq_len=trg_seq_len,
             n_heads=n_heads,
             d_model=d_model,
-            n_layers=n_enc_layers
+            n_layers=n_dec_layers
         )
-        decoder
 
         # "we share the same weight matrix between the two embedding layers and the pre-softmax linear transformation" in section 3.4 in the paper
-        decoder.input.embedding.weight = encoder.input.embedding.weight
-        decoder.linear.weight = decoder.input.embedding.weight
+        # decoder.input.embedding.weight = encoder.input.embedding.weight
+        # decoder.linear.weight = decoder.input.embedding.weight
 
     def forward(self, src_seq, trg_seq):
-        src_seq = torch.randint(low=0, high=src_vocab_size, size=(BATCH_SIZE, src_seq_len))
-        trg_seq = torch.randint(low=0, high=trg_vocab_size, size=(BATCH_SIZE, trg_seq_len))
-
-        enc_output, _ = encoder(src_seq)
-        dec_output, attn_weights1, attn_weights2 = decoder(trg_seq, enc_output)
-        dec_output.shape
-        # print(dec_output.shape, attn_weights1.shape, attn_weights2.shape)
-        # trg_seq = trg_input(trg_seq)
-        print(src_seq.shape)
-        print(_.shape)
-
-
-# class Decoder(nn.Module):
-#     def __init__(self):
-#         super().__init__()
-
-#         self.do1 = nn.Dropout(0.5)
-#         self.do2 = nn.Dropout(0.5)
-    
-#     def forward(self, x):
-#         x = self.do2(x)
-#         return x
-# dec = Decoder()
-# dec
+        enc_output = self.enc(src_seq)
+        dec_output = self.dec(trg_seq, enc_output)
+        return dec_output
 
 
 if __name__ == "__main__":
-    input = torch.randint(low=0, high=vocab_size, size=(batch_size, seq_len))
-    # seq = torch.randint(low=0, high=vOCAB_SIZE, size=(BATCH_SIZE, SEq_LEN))
-    transformer = Transformer(n_heads=6, d_model=d_model)
-    transformer(input).shape
+    transformer = Transformer(
+        src_vocab_size=1000,
+        trg_vocab_size=800,
+        src_seq_len=30,
+        trg_seq_len=44,
+        d_model=D_MODEL
+    )
+
+    src_seq = torch.randint(low=0, high=src_vocab_size, size=(BATCH_SIZE, src_seq_len))
+    trg_seq = torch.randint(low=0, high=trg_vocab_size, size=(BATCH_SIZE, trg_seq_len))
+
+    output = transformer(src_seq=src_seq, trg_seq=trg_seq)
+    output
