@@ -1,21 +1,20 @@
 # Reference:
     # https://github.com/jadore801120/attention-is-all-you-need-pytorch/tree/master/transformer
     # https://github.com/huggingface/pytorch-image-models/blob/624266148d8fa5ddb22a6f5e523a53aaf0e8a9eb/timm/models/vision_transformer.py#L216
+    # https://en.wikipedia.org/wiki/Transformer_(machine_learning_model)
+    # https://wikidocs.net/31379
 
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from einops import rearrange
-import numpy as np
 import math
 
-
+N_HEADS = 8
 D_MODEL = 512
-# BATCH_SIZE = 4096
+N_LAYERS = 6
 BATCH_SIZE = 16
-# SEQ_LEN = 380
 SEQ_LEN = 30
-# vOCAB_SIZE = 37_000
 VOCAB_SIZE = 1000
 D_FF = 2048
 
@@ -43,11 +42,14 @@ class PositionalEncoding(nn.Module):
 
 
 class Input(nn.Module):
-    def __init__(self, vocab_size, d_model):
+    def __init__(self, vocab_size, d_model, pad_idx):
         super().__init__()
-        self.d_model = d_model
 
-        self.embed = nn.Embedding(num_embeddings=vocab_size, embedding_dim=d_model)
+        self.vocab_size = vocab_size
+        self.d_model = d_model
+        self.pad_idx = pad_idx
+
+        self.embed = nn.Embedding(num_embeddings=vocab_size, embedding_dim=d_model, padding_idx=pad_idx)
         self.pos_enc = PositionalEncoding(dim=d_model)
         self.dropout = nn.Dropout(0.1)
 
@@ -60,7 +62,7 @@ class Input(nn.Module):
 
 
 class MultiHeadAttention(nn.Module):
-    def __init__(self, dim=D_MODEL, n_heads=8):
+    def __init__(self, dim=D_MODEL, n_heads=N_HEADS):
         super().__init__()
     
         self.dim = dim # $d_{model}$
@@ -76,13 +78,7 @@ class MultiHeadAttention(nn.Module):
         self.dropout = nn.Dropout(0.1)
         self.w_o = nn.Linear(dim, dim, bias=False)
 
-    def subsequent_info_mask(self, batch_size, src_seq_len, trg_seq_len):
-        """ Prevent positions from attending to subsequent positions. """
-        mask = torch.tril(torch.ones(size=(src_seq_len, trg_seq_len)), diagonal=0).bool()
-        batched_mask = mask.unsqueeze(0).unsqueeze(3).repeat(batch_size, 1, 1, self.n_heads)
-        return batched_mask
-
-    def forward(self, q, k, v, masked=False):
+    def forward(self, q, k, v, mask=None):
         b, l, _ = q.shape
         _, m, _ = k.shape
 
@@ -92,9 +88,9 @@ class MultiHeadAttention(nn.Module):
         v = v.view(b, m, self.head_dim, self.n_heads)
 
         attn_score = torch.einsum("bldn,bmdn->blmn", q, k) # "MatMul" in "Figure 2" of the paper
-        if masked:
-            subseq_mask = self.subsequent_info_mask(batch_size=b, src_seq_len=l, trg_seq_len=m)
-            attn_score.masked_fill_(mask=subseq_mask, value=-math.inf) # "Mask (opt.)"
+        if mask is not None:
+            print(attn_score.shape, mask.shape)
+            attn_score.masked_fill_(mask=mask, value=-math.inf) # "Mask (opt.)"
         attn_score /= (self.head_dim ** 0.5) # "Scale"
 
         attn_weight = self.softmax(attn_score) # "Softmax"
@@ -114,11 +110,13 @@ class PositionwiseFeedForward(nn.Module):
         self.w1 = nn.Linear(d_model, d_ff)
         self.relu = nn.ReLU()
         self.w2 = nn.Linear(d_ff, d_model)
+        self.dropout = nn.Dropout(0.1)
 
     def forward(self, x):
         x = self.w1(x)
         x = self.relu(x)
         x = self.w2(x)
+        x = self.dropout(x) # Not in the paper
         return x
 
 
@@ -137,8 +135,8 @@ class EncoderLayer(nn.Module):
 
         self.dropout = nn.Dropout(0.1)
 
-    def forward(self, x):
-        attn_output = self.self_attn(q=x, k=x, v=x) # "Multi-Head Attention" in "Figure 1" of the paper
+    def forward(self, x, mask):
+        attn_output = self.self_attn(q=x, k=x, v=x, mask=mask) # "Multi-Head Attention" in "Figure 1" of the paper
         x += attn_output # "Add"
         x = self.norm1(x) # "& Norm"
 
@@ -151,24 +149,27 @@ class EncoderLayer(nn.Module):
 
 class Encoder(nn.Module):
     # `n_layers`: $N$
-    def __init__(self, src_vocab_size, src_seq_len, n_heads, d_model, n_layers):
+    def __init__(
+        self, src_vocab_size, src_seq_len, src_pad_idx, n_heads=N_HEADS, d_model=D_MODEL, n_layers=N_LAYERS
+    ):
         super().__init__()
 
         self.src_vocab_size = src_vocab_size
         self.src_seq_len = src_seq_len
+        self.src_pad_idx = src_pad_idx
         self.n_heads = n_heads
         self.d_model = d_model
         self.n_layers = n_layers
 
-        self.input = Input(vocab_size=src_vocab_size, d_model=d_model)
+        self.input = Input(vocab_size=src_vocab_size, d_model=d_model, pad_idx=src_pad_idx)
         self.enc_stack = nn.ModuleList(
             [EncoderLayer(d_model=d_model, n_heads=n_heads) for _ in range(self.n_layers)]
         )
 
-    def forward(self, x):
+    def forward(self, x, mask):
         x = self.input(x)
         for enc_layer in self.enc_stack:
-            x = enc_layer(x)
+            x = enc_layer(x, mask=mask)
         return x
 
 
@@ -190,12 +191,12 @@ class DecoderLayer(nn.Module):
 
         self.dropout = nn.Dropout(0.1)
 
-    def forward(self, x, enc_output):
+    def forward(self, x, enc_output, mask):
         attn_output = self.self_attn(q=x, k=x, v=x) # "Masked Multi-Head Attention" in "Figure 1" of the paper
         x += attn_output # "Add"
         x = self.norm1(x) # "& Norm"
 
-        attn_output = self.enc_dec_attn(q=x, k=enc_output, v=enc_output, masked=True) # "Multi-Head Attention"
+        attn_output = self.enc_dec_attn(q=x, k=enc_output, v=enc_output, mask=mask) # "Multi-Head Attention"
         x += attn_output # "Add"
         x = self.norm2(x) # "& Norm"
 
@@ -208,26 +209,29 @@ class DecoderLayer(nn.Module):
 
 
 class Decoder(nn.Module):
-    def __init__(self, trg_vocab_size, trg_seq_len, n_heads, d_model, n_layers):
+    def __init__(
+        self, trg_vocab_size, trg_seq_len, trg_pad_idx, n_heads=N_HEADS, d_model=D_MODEL, n_layers=N_LAYERS
+    ):
         super().__init__()
 
         self.trg_vocab_size = trg_vocab_size
         self.trg_seq_len = trg_seq_len
+        self.trg_pad_idx = trg_pad_idx
         self.n_heads = n_heads
         self.d_model = d_model
         self.n_layers = n_layers
 
-        self.input = Input(vocab_size=trg_vocab_size, d_model=d_model)
+        self.input = Input(vocab_size=trg_vocab_size, d_model=d_model, pad_idx=trg_pad_idx)
         self.dec_stack = nn.ModuleList(
             [DecoderLayer(n_heads=n_heads, d_model=d_model) for _ in range(self.n_layers)]
         )
         self.linear = nn.Linear(d_model, trg_vocab_size)
         self.softmax = nn.Softmax(dim=-1)
 
-    def forward(self, x, enc_output):
+    def forward(self, x, enc_output, mask):
         x = self.input(x)
         for dec_layer in self.dec_stack:
-            x = dec_layer(x, enc_output=enc_output)
+            x = dec_layer(x, enc_output=enc_output, mask=mask)
         x = self.linear(x)
         x = self.softmax(x)
         return x
@@ -240,35 +244,55 @@ class Transformer(nn.Module):
         trg_vocab_size,
         src_seq_len,
         trg_seq_len,
-        d_model,
-        n_heads=8,
-        n_enc_layers=6,
-        n_dec_layers=6,
+        src_pad_idx,
+        trg_pad_idx
     ):
         super().__init__()
+
+        self.src_vocab_size = src_vocab_size
+        self.trg_vocab_size = trg_vocab_size
+        self.src_seq_len = src_seq_len
+        self.trg_seq_len = trg_seq_len
+        self.src_pad_idx = src_pad_idx
+        self.trg_pad_idx = trg_pad_idx
 
         self.enc = Encoder(
             src_vocab_size=src_vocab_size,
             src_seq_len=src_seq_len,
-            n_heads=n_heads,
-            d_model=d_model,
-            n_layers=n_enc_layers
+            src_pad_idx=src_pad_idx
         )
         self.dec = Decoder(
             trg_vocab_size=trg_vocab_size,
             trg_seq_len=trg_seq_len,
-            n_heads=n_heads,
-            d_model=d_model,
-            n_layers=n_dec_layers
+            trg_pad_idx=trg_pad_idx
         )
+
+        # self.subseq_mask = self._get_subsequent_info_mask(src_seq_len=src_seq_len, trg_seq_len=trg_seq_len)
 
         # "we share the same weight matrix between the two embedding layers and the pre-softmax linear transformation" in section 3.4 of the paper.
         # decoder.input.embedding.weight = encoder.input.embedding.weight
         # decoder.linear.weight = decoder.input.embedding.weight
 
+    def _get_pad_mask(self, seq, pad_idx):
+        # return (seq == pad_idx).unsqueeze(-2)
+        mask = (seq == pad_idx)
+        return mask
+
+    # def _get_subsequent_info_mask(self, src_seq_len, trg_seq_len):
+    #     """ Prevent positions from attending to subsequent positions. """
+    #     mask = torch.tril(torch.ones(size=(src_seq_len, trg_seq_len)), diagonal=0).bool()
+    #     mask = mask.unsqueeze(0).unsqueeze(3).repeat(1, 1, 1, self.n_heads)
+    #     return mask
+
     def forward(self, src_seq, trg_seq):
-        enc_output = self.enc(src_seq)
-        dec_output = self.dec(trg_seq, enc_output)
+        # b, _ = src_seq.shape
+        # subseq_mask = self.subseq_mask.repeat(b, 1, 1, 1)
+
+        src_pad_mask = self._get_pad_mask(seq=src_seq, pad_idx=self.src_pad_idx)
+        trg_pad_mask = self._get_pad_mask(seq=trg_seq, pad_idx=self.trg_pad_idx)
+
+        enc_output = self.enc(src_seq, mask=src_pad_mask)
+        dec_output = self.dec(trg_seq, enc_output, mask=trg_pad_mask)
         return dec_output
 
 
@@ -277,16 +301,29 @@ if __name__ == "__main__":
     trg_vocab_size=800
     src_seq_len=30
     trg_seq_len=4
+    src_pad_idx=0
+    trg_pad_idx=1
     transformer = Transformer(
         src_vocab_size=src_vocab_size,
         trg_vocab_size=trg_vocab_size,
         src_seq_len=src_seq_len,
         trg_seq_len=trg_seq_len,
-        d_model=D_MODEL
+        src_pad_idx=src_pad_idx,
+        trg_pad_idx=trg_pad_idx
     )
 
     src_seq = torch.randint(low=0, high=src_vocab_size, size=(BATCH_SIZE, src_seq_len))
     trg_seq = torch.randint(low=0, high=trg_vocab_size, size=(BATCH_SIZE, trg_seq_len))
-
+    
     output = transformer(src_seq=src_seq, trg_seq=trg_seq)
-    output
+    # output
+    
+    # src_seq = torch.randint(low=0, high=10, size=(8, 5))
+    # pad_idx = 5
+    # mask = src_seq != pad_idx
+    # mask
+    # tensor = torch.ones_like(mask, dtype=torch.int16)
+    # tensor.masked_fill_(mask=mask, value=-10)
+    # tensor
+
+    
