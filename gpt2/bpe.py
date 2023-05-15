@@ -1,59 +1,71 @@
 # https://medium.com/@pierre_guillou/byte-level-bpe-an-universal-tokenizer-but-aff932332ffe
 
-# Byte Level BPE (BBPE) tokenizers from Transformers and Tokenizers (Hugging Face libraries)
-
-# 1. Get the pre-trained GPT2 Tokenizer (pre-training with an English corpus)
 from transformers import GPT2TokenizerFast
-from tokenizers import ByteLevelBPETokenizer
+import tokenizers
+# from tokenizers import ByteLevelBPETokenizer
 from pathlib import Path
-
-pretrained_weights = "gpt2"
-tokenizer_en = GPT2TokenizerFast.from_pretrained(pretrained_weights)
-tokenizer_en.pad_token = tokenizer_en.eos_token
-
-# 2. Train a Byte Level BPE (BBPE) tokenizer on the Portuguese Wikipedia
-
-# Get GPT2 tokenizer_en vocab size
-ByteLevelBPE_tokenizer_pt_vocab_size = tokenizer_en.vocab_size
-ByteLevelBPE_tokenizer_pt_vocab_size
-
-# ByteLevelBPETokenizer Represents a Byte-level BPE as introduced by OpenAI with their GPT-2 model
-
-ByteLevelBPE_tokenizer_pt = ByteLevelBPETokenizer()
+import ssl
 
 
-# Get list of paths to corpus files
-path_data = Path("/Users/jongbeomkim/Desktop/workspace/transformer_based_models/gpt2")
-# paths = [str(path_data/"corpus.txt")]
-paths = [str(path_data/"empty.txt")]
+def tokenize(char):
+    bytes = char.encode("utf-8")
+    hexes = bytes.hex()
+    tokenized = [chr(int(f"""0x{hexes[i: i + 2]}""", base=16)) for i in range(len(hexes))[:: 2]]
+    return tokenized
 
+
+ssl._create_default_https_context = ssl._create_unverified_context
+
+gpt2_tokenizer = GPT2TokenizerFast.from_pretrained("gpt2")
+gpt2_tokenizer._tokenizer.get_vocab()
+
+char="ㄱ"
+bytes = char.encode("utf-8")
+hexes = bytes.hex()
+hexes
+gpt2_tokenizer.encode("곰")
+tokenize("곰")
+gpt2_tokenizer.id_to_token([166])
+# gpt2_tokenizer.decode(gpt2_tokenizer.encode("곰"))
+
+
+gpt2_tokenizer.pad_token = gpt2_tokenizer.eos_token
+
+
+bbpe_tokenizer_vocab_size = gpt2_tokenizer.vocab_size
+bbpe_tokenizer_vocab_size
+
+
+
+
+
+bbpe_tokenizer = ByteLevelBPETokenizer()
+corpus_dir = ["/Users/jongbeomkim/Desktop/workspace/transformer_based_models/gpt2/corpus.txt"]
 # Customize training with <|endoftext|> special GPT2 token
-ByteLevelBPE_tokenizer_pt.train(
-    files=paths, 
-    vocab_size=ByteLevelBPE_tokenizer_pt_vocab_size, 
+bbpe_tokenizer.train(
+    files=corpus_dir, 
+    # vocab_size=bbpe_tokenizer_vocab_size,
+    vocab_size=2 ** 8,
     min_frequency=2, 
     special_tokens=["<|endoftext|>"]
 )
-
 # Get sequence length max of 1024
-ByteLevelBPE_tokenizer_pt.enable_truncation(max_length=1024)
+bbpe_tokenizer.enable_truncation(max_length=1024)
 
 # save tokenizer
-ByteLevelBPE_tokenizer_pt_rep = "ByteLevelBPE_tokenizer_pt"
-path_to_ByteLevelBPE_tokenizer_pt_rep = path_data/ByteLevelBPE_tokenizer_pt_rep
-if not (path_to_ByteLevelBPE_tokenizer_pt_rep).exists():
-    path_to_ByteLevelBPE_tokenizer_pt_rep.mkdir(exist_ok=True, parents=True)
-ByteLevelBPE_tokenizer_pt.save_model(str(path_to_ByteLevelBPE_tokenizer_pt_rep))
+save_dir = Path("/Users/jongbeomkim/Desktop/workspace/transformer_based_models/gpt2/bbpe_test")
+save_dir.mkdir(exist_ok=True, parents=True)
+bbpe_tokenizer.save_model(str(save_dir))
 
 # 3. Import the tokenizer config files in Portuguese into the pre-trained GPT2 Tokenizer
 
-# Get the path to ByteLevelBPE_tokenizer_pt config files
-ByteLevelBPE_tokenizer_pt_rep = "ByteLevelBPE_tokenizer_pt"
-path_to_ByteLevelBPE_tokenizer_pt_rep = path_data/ByteLevelBPE_tokenizer_pt_rep
+# Get the path to bbpe_tokenizer config files
+bbpe_tokenizer_rep = "bbpe_tokenizer"
+save_dir = path_data/bbpe_tokenizer_rep
 
 # import the pre-trained GPT2TokenizerFast tokenizer with the tokenizer_pt config files
 tokenizer_pt = GPT2TokenizerFast.from_pretrained(
-    str(path_to_ByteLevelBPE_tokenizer_pt_rep), 
+    str(save_dir), 
     pad_token="<|endoftext|>"
 )
 
@@ -61,5 +73,31 @@ tokenizer_pt = GPT2TokenizerFast.from_pretrained(
 tokenizer_pt.model_max_length = 1024
 
 
-tokenizer_en.encode("곰")
-tokenizer_en.decode(tokenizer_en.encode("곰"))
+
+from tokenizers import Tokenizer, models, pre_tokenizers, decoders, trainers, processors
+
+# Initialize a tokenizer
+tokenizer = Tokenizer(models.BPE())
+
+# Customize pre-tokenization and decoding
+tokenizer.pre_tokenizer = pre_tokenizers.ByteLevel(add_prefix_space=True)
+tokenizer.decoder = decoders.ByteLevel()
+tokenizer.post_processor = processors.ByteLevel(trim_offsets=True)
+
+# And then train
+trainer = trainers.BpeTrainer(
+    vocab_size=20000,
+    min_frequency=2,
+    initial_alphabet=pre_tokenizers.ByteLevel.alphabet()
+)
+tokenizer.train(["/Users/jongbeomkim/Desktop/workspace/transformer_based_models/gpt2/empty.txt"], trainer=trainer)
+
+# And Save it
+tokenizer.save("/Users/jongbeomkim/Desktop/workspace/transformer_based_models/gpt2/vocab.json", pretty=True)
+
+tokenizer.encode("안녕").ids
+tokenizer.
+tokenizer.decode([168, 243, 230])
+tokenizer.decode([168, 243, 100])
+tokenizer.decode([168, 243])
+tokenizer.id_to_token(220)

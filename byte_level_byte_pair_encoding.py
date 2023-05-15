@@ -28,11 +28,11 @@ tokenizer.vocab_size
 
 def tokenize(char):
     bytes = char.encode("utf-8")
-    bytes
     hexes = bytes.hex()
-    hexes
-    tokenized = [chr(int(f"""0x{hexes[i: i + 2]}""", base=16)) for i in range(len(hexes))[:: 2]]
+    tokenized = [chr(int(f"""0x{hexes[i: i + 2]}""", base=16)) + 1 for i in range(len(hexes))[:: 2]]
     return tokenized
+tokenize("곰")
+"곰".encode("utf8")
 tokenizer.encode(char)
 [int(f"""0x{hexes[i: i + 2]}""", base=16) for i in range(len(hexes))[:: 2]]
 [chr(int(f"""0x{hexes[i: i + 2]}""", base=16)) for i in range(len(hexes))[:: 2]]
