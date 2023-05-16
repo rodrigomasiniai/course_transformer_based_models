@@ -6,16 +6,11 @@
 
 import torch
 import torch.nn as nn
-import torch.nn.functional as F
 from einops import rearrange
-import math
 
 N_HEADS = 8
 D_MODEL = 512
 N_LAYERS = 6
-BATCH_SIZE = 16
-SEQ_LEN = 30
-VOCAB_SIZE = 1000
 D_FF = 2048
 
 
@@ -37,7 +32,7 @@ class PositionalEncoding(nn.Module):
             x: Tensor, shape `[batch_size, seq_len, embedding_dim]`
         """
         b, l, _ = x.shape
-        x += self.pe.unsqueeze(0).repeat(b, 1, 1)[:, : l, :]
+        x += self.pe.unsqueeze(0)[:, : l, :]
         return x
 
 
@@ -55,7 +50,9 @@ class Input(nn.Module):
 
     def forward(self, x):
         x = self.embed(x)
-        x *= self.d_model ** 0.5 # "In the embedding layers, we multiply those weights by $\sqrt{d_{text{model}}}$." in section 3.4 of the paper.
+        # "In the embedding layers, we multiply those weights by $\sqrt{d_{text{model}}}$."
+        # in section 3.4 of the paper.
+        x *= self.d_model ** 0.5
         x = self.pos_enc(x)
         x = self.dropout(x) # Not in the paper
         return x
@@ -89,8 +86,7 @@ class MultiHeadAttention(nn.Module):
 
         attn_score = torch.einsum("bldn,bmdn->blmn", q, k) # "MatMul" in "Figure 2" of the paper
         if mask is not None:
-            print(attn_score.shape, mask.shape)
-            attn_score.masked_fill_(mask=mask, value=-math.inf) # "Mask (opt.)"
+            attn_score.masked_fill_(mask=mask, value=-1e9) # "Mask (opt.)"
         attn_score /= (self.head_dim ** 0.5) # "Scale"
 
         attn_weight = self.softmax(attn_score) # "Softmax"
@@ -148,7 +144,6 @@ class EncoderLayer(nn.Module):
 
 
 class Encoder(nn.Module):
-    # `n_layers`: $N$
     def __init__(
         self, src_vocab_size, src_seq_len, src_pad_idx, n_heads=N_HEADS, d_model=D_MODEL, n_layers=N_LAYERS
     ):
@@ -249,6 +244,9 @@ class Transformer(nn.Module):
     ):
         super().__init__()
 
+        assert src_vocab_size == trg_vocab_size, "`src_vocab_size` and `trg_vocab_size` should be equal."
+        assert src_seq_len == trg_seq_len, "`src_seq_len` and `trg_seq_len` should be equal."
+
         self.src_vocab_size = src_vocab_size
         self.trg_vocab_size = trg_vocab_size
         self.src_seq_len = src_seq_len
@@ -267,63 +265,48 @@ class Transformer(nn.Module):
             trg_pad_idx=trg_pad_idx
         )
 
-        # self.subseq_mask = self._get_subsequent_info_mask(src_seq_len=src_seq_len, trg_seq_len=trg_seq_len)
-
-        # "we share the same weight matrix between the two embedding layers and the pre-softmax linear transformation" in section 3.4 of the paper.
-        # decoder.input.embedding.weight = encoder.input.embedding.weight
-        # decoder.linear.weight = decoder.input.embedding.weight
+        # "We share the same weight matrix between the two embedding layers and the pre-softmax linear transformation"
+        # in # section 3.4 of the paper.
+        self.dec.input.embed.weight = self.enc.input.embed.weight
+        self.dec.linear.weight = self.dec.input.embed.weight
 
     def _get_pad_mask(self, seq, pad_idx):
-        # return (seq == pad_idx).unsqueeze(-2)
-        mask = (seq == pad_idx)
+        mask = (seq == pad_idx).unsqueeze(2).unsqueeze(3)
         return mask
 
-    # def _get_subsequent_info_mask(self, src_seq_len, trg_seq_len):
-    #     """ Prevent positions from attending to subsequent positions. """
-    #     mask = torch.tril(torch.ones(size=(src_seq_len, trg_seq_len)), diagonal=0).bool()
-    #     mask = mask.unsqueeze(0).unsqueeze(3).repeat(1, 1, 1, self.n_heads)
-    #     return mask
+    def _get_subsequent_info_mask(self):
+        # "Prevent positions from attending to subsequent positions." in section 3.1 of the paper
+        mask = torch.tril(torch.ones(size=(self.trg_seq_len, self.src_seq_len)), diagonal=0).bool()
+        mask = mask.unsqueeze(0).unsqueeze(3)
+        return mask
 
     def forward(self, src_seq, trg_seq):
-        # b, _ = src_seq.shape
-        # subseq_mask = self.subseq_mask.repeat(b, 1, 1, 1)
-
         src_pad_mask = self._get_pad_mask(seq=src_seq, pad_idx=self.src_pad_idx)
         trg_pad_mask = self._get_pad_mask(seq=trg_seq, pad_idx=self.trg_pad_idx)
+        trg_subseq_mask = self._get_subsequent_info_mask()
+        trg_mask = (trg_pad_mask | trg_subseq_mask)
 
         enc_output = self.enc(src_seq, mask=src_pad_mask)
-        dec_output = self.dec(trg_seq, enc_output, mask=trg_pad_mask)
+        dec_output = self.dec(trg_seq, enc_output=enc_output, mask=trg_mask)
         return dec_output
 
 
 if __name__ == "__main__":
-    src_vocab_size=1000
-    trg_vocab_size=800
-    src_seq_len=30
-    trg_seq_len=4
-    src_pad_idx=0
-    trg_pad_idx=1
+    BATCH_SIZE = 16
+    SEQ_LEN = 30
+    VOCAB_SIZE = 1000
+    src_pad_idx = 0
+    trg_pad_idx = 0
     transformer = Transformer(
-        src_vocab_size=src_vocab_size,
-        trg_vocab_size=trg_vocab_size,
-        src_seq_len=src_seq_len,
-        trg_seq_len=trg_seq_len,
+        src_vocab_size=VOCAB_SIZE,
+        trg_vocab_size=VOCAB_SIZE,
+        src_seq_len=SEQ_LEN,
+        trg_seq_len=SEQ_LEN,
         src_pad_idx=src_pad_idx,
         trg_pad_idx=trg_pad_idx
     )
 
-    src_seq = torch.randint(low=0, high=src_vocab_size, size=(BATCH_SIZE, src_seq_len))
-    trg_seq = torch.randint(low=0, high=trg_vocab_size, size=(BATCH_SIZE, trg_seq_len))
-    
+    src_seq = torch.randint(low=0, high=VOCAB_SIZE, size=(BATCH_SIZE, SEQ_LEN))
+    trg_seq = torch.randint(low=0, high=VOCAB_SIZE, size=(BATCH_SIZE, SEQ_LEN))
     output = transformer(src_seq=src_seq, trg_seq=trg_seq)
-    # output
-    
-    # src_seq = torch.randint(low=0, high=10, size=(8, 5))
-    # pad_idx = 5
-    # mask = src_seq != pad_idx
-    # mask
-    # tensor = torch.ones_like(mask, dtype=torch.int16)
-    # tensor.masked_fill_(mask=mask, value=-10)
-    # tensor
-
-    
+    print(output.shape)
