@@ -1,7 +1,6 @@
 # Reference:
     # https://github.com/jadore801120/attention-is-all-you-need-pytorch/tree/master/transformer
     # https://github.com/huggingface/pytorch-image-models/blob/624266148d8fa5ddb22a6f5e523a53aaf0e8a9eb/timm/models/vision_transformer.py#L216
-    # https://en.wikipedia.org/wiki/Transformer_(machine_learning_model)
     # https://wikidocs.net/31379
 
 import torch
@@ -93,7 +92,7 @@ class MultiHeadAttention(nn.Module):
         attn_weight = self.dropout(attn_weight) # Not in the paper
 
         x = torch.einsum("blmn,bmdn->bldn", attn_weight, k) # "MatMul"
-        x = rearrange(x, "b l d n -> b l (d n)")
+        x = rearrange(x, pattern="b l d n -> b l (d n)")
 
         x = self.w_o(x)
         return x
