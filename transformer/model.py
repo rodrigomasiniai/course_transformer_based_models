@@ -7,32 +7,10 @@ import torch
 import torch.nn as nn
 from einops import rearrange
 
-N_HEADS = 8
 D_MODEL = 512
+N_HEADS = 8
 N_LAYERS = 6
 D_FF = 2048
-
-
-class PositionalEncoding(nn.Module):
-    def __init__(self, dim: int, max_len: int=5000) -> None:
-        super().__init__()
-
-        pos = torch.arange(max_len).unsqueeze(1)
-        i = torch.arange(dim // 2).unsqueeze(0)
-        angle = pos / (10_000 ** (2 * i / dim))
-
-        self.pe = torch.zeros(size=(max_len, dim))
-        self.pe[:, 0:: 2] = torch.sin(angle)
-        self.pe[:, 1:: 2] = torch.cos(angle)
-
-    def forward(self, x: torch.Tensor) -> torch.Tensor:
-        """
-        Arguments:
-            x: Tensor, shape `[batch_size, seq_len, embedding_dim]`
-        """
-        b, l, _ = x.shape
-        x += self.pe.unsqueeze(0)[:, : l, :]
-        return x
 
 
 class Input(nn.Module):
@@ -54,6 +32,28 @@ class Input(nn.Module):
         x *= self.d_model ** 0.5
         x = self.pos_enc(x)
         x = self.dropout(x) # Not in the paper
+        return x
+
+
+class PositionalEncoding(nn.Module):
+    def __init__(self, dim: int, max_len: int=5000) -> None:
+        super().__init__()
+
+        pos = torch.arange(max_len).unsqueeze(1)
+        i = torch.arange(dim // 2).unsqueeze(0)
+        angle = pos / (10_000 ** (2 * i / dim))
+
+        self.pe = torch.zeros(size=(max_len, dim))
+        self.pe[:, 0:: 2] = torch.sin(angle)
+        self.pe[:, 1:: 2] = torch.cos(angle)
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        """
+        Arguments:
+            x: Tensor, shape `[batch_size, seq_len, embedding_dim]`
+        """
+        b, l, _ = x.shape
+        x += self.pe.unsqueeze(0)[:, : l, :]
         return x
 
 
@@ -254,14 +254,10 @@ class Transformer(nn.Module):
         self.trg_pad_idx = trg_pad_idx
 
         self.enc = Encoder(
-            src_vocab_size=src_vocab_size,
-            src_seq_len=src_seq_len,
-            src_pad_idx=src_pad_idx
+            src_vocab_size=src_vocab_size, src_seq_len=src_seq_len, src_pad_idx=src_pad_idx
         )
         self.dec = Decoder(
-            trg_vocab_size=trg_vocab_size,
-            trg_seq_len=trg_seq_len,
-            trg_pad_idx=trg_pad_idx
+            trg_vocab_size=trg_vocab_size, trg_seq_len=trg_seq_len, trg_pad_idx=trg_pad_idx
         )
 
         # "We share the same weight matrix between the two embedding layers and the pre-softmax linear transformation"
