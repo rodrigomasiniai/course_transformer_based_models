@@ -1,78 +1,96 @@
 # References:
-    # https://paul-hyun.github.io/gpt-01/?fbclid=IwAR3jaAPdcWBIkShNDr-NIXE5JCfw-UvoQ2h000r5qnSBj8kjrY4ax1jDeM8
-    # https://gaussian37.github.io/dl-pytorch-lr_scheduler/
 
-import math
+
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
 import torch.optim as optim
-from torch.optim.lr_scheduler import _LRScheduler
 import timm
 from timm.optim import AdamP
 from timm.scheduler import CosineLRScheduler
 import matplotlib.pyplot as plt
 
-from process_images import _figure_to_array
-
-training_epochs = 300
-cooldown_epochs = 10
-num_epochs = training_epochs + cooldown_epochs
-
-model = torch.nn.Linear(2, 1)
-optimizer = AdamP(model.parameters(), lr=0.01)
+from process_images import _figure_to_array, show_image
 
 
-def plot_lrs_for_timm_scheduler(scheduler, batch_size, n_epochs):
-    lrs = [optimizer.param_groups[0]["lr"]]
+# def plot_lrs_for_timm_scheduler(scheduler, batch_size, n_steps):
+#     batch_size = 32
+#     # n_epochs = 30
+#     n_steps = 2000
 
-    n_steps = 0
-    # for epoch in range(1, n_epochs + 1):
-    for epoch in range(n_epochs):
-        # n_steps = batch_size * epoch
-        for _ in range(batch_size):
-            n_steps += 1
-            scheduler.step_update(num_updates=n_steps)
-        scheduler.step(epoch=epoch + 1)
+#     n_epochs = n_steps // batch_size
+#     968 // 32 * 2
+#     n_epochs
+#     lrs = [optimizer.param_groups[0]["lr"]]
 
+#     for epoch in range(n_epochs):
+#         n_steps = batch_size * epoch
+#         for _ in range(batch_size):
+#             n_steps += 1
+#             # Should be called after each optimizer update with the index of the next update.
+#             scheduler.step_update(num_updates=n_steps)
+
+#             lrs.append(optimizer.param_groups[0]["lr"])
+#         # Should be called at the end of each epoch, with the index of the next epoch
+#         scheduler.step(epoch=epoch + 1)
+
+#         # lrs.append(optimizer.param_groups[0]["lr"])
+#     lrs = lrs[: -1]
+#     return lrs
+
+
+def get_lr_schedule(scheduler, n_steps):
+    lrs = list()
+    for step in range(1, n_steps + 1):
         lrs.append(optimizer.param_groups[0]["lr"])
-    lrs = lrs[: -1]
+        # Should be called after each optimizer update with the index of the next update.
+        scheduler.step_update(num_updates=step + 1)
+    return lrs
 
-    fig, axes = plt.subplots(figsize=(int(len(lrs) ** 0.4), 2))
-    axes.plot(range(1, n_epochs + 1), lrs)
-    # axes.plot(range(n_epochs), lrs)
-    axes.set(xticks=range(0, n_epochs + 1, 10))
-    # axes.set_xlim([1, n_epochs])
-    axes.set_xlim([0, n_epochs])
+
+def visualize_lrs(lrs, n_steps):
+    fig, axes = plt.subplots(figsize=(int(len(lrs) ** 0.2), 3))
+    axes.plot(range(1, n_steps + 1), lrs)
+    # axes.set(xticks=range(0, n_steps + 1, 50))
+    axes.set_xlim([0, n_steps])
     axes.tick_params(axis="x", labelrotation=90, labelsize=5)
+    axes.tick_params(axis="y", labelsize=5)
     axes.grid(axis="x", color="black", alpha=1, linestyle="--", linewidth=0.5)
+    fig.tight_layout()
+
     arr = _figure_to_array(fig)
-    return arr, lrs
+    return arr
 
 
-n_epochs = 300
-batch_size = 16
-init_epoch = 50
-scheduler = CosineLRScheduler(
-    optimizer=optimizer,
-    t_initial=init_epoch,
-    lr_min=0.001, # Minimum learning rate
-    cycle_mul=1.3, # A factor that increases T_{i} after a restart (Default `1``)
-    cycle_decay=0.8,
-    cycle_limit=n_epochs // init_epoch + 1,
-    warmup_t=10,
-    warmup_lr_init=0.002,
-    t_in_epochs=True # Whether the number iterations is given in terms of epochs rather than the number of batch updates (Default `True`)
-)
-plot, lrs = plot_lrs_for_timm_scheduler(scheduler, n_epochs=n_epochs, batch_size=batch_size)
-show_image(plot)
+if __name__ == "__main__":
+    n_steps = 20000
+    batch_size = 16
+    data_size = 5000
+    max_lr = 2.5e-4
+
+    model = torch.nn.Linear(2, 1)
+    # optimizer = AdamP(model.parameters(), lr=max_lr)
+    optimizer = optim.Adam(params=model.parameters(), lr=max_lr)
+
+    scheduler = CosineLRScheduler(
+        optimizer=optimizer,
+        t_initial=n_steps,
+        # lr_min=0.001, # Minimum learning rate
+        lr_min=0, # Minimum learning rate
+        # cycle_mul=1.3,
+        # cycle_decay=0.8,
+        # cycle_limit=n_epochs // init_epoch + 1,
+        warmup_t=2000,
+        warmup_lr_init=0,
+        warmup_prefix=True,
+        t_in_epochs=False # If `True` the number of iterations is given in terms of epochs
+            # rather than the number of batch updates.
+    )
+    lrs = get_lr_schedule(scheduler, n_steps=n_steps)
+    vis = visualize_lrs(lrs=lrs, n_steps=n_steps)
+    show_image(vis)
 
 
-
-# We used the Adam optimization scheme with a max learning rate of 2.5e-4. The learning rate was increased linearly from zero over the first 2000 updates and annealed to 0 using a cosine schedule.
-max_lr = 2.5e-4
-batch_size = 64
-n_epochs = 100
-gpt = GPT()
-optimizer = optim.Adam(params=gpt.parameters(), lr=0)
-scheduler = CosineAnnealingWarmUpRestarts(optimizer=optimizer, T_up=2_000, eta_max=2.5e-4, T_0=150, T_mult=1, gamma=1)
+    # We used the Adam optimization scheme with a max learning rate of 2.5e-4. The learning rate was increased linearly from zero over the first 2000 updates and annealed to 0 using a cosine schedule.
+    batch_size = 64
+    n_epochs = 100

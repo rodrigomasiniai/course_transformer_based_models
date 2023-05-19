@@ -21,6 +21,12 @@ def save_image(img, path):
     _to_pil(img).save(str(path))
 
 
+def show_image(img):
+    copied = img.copy()
+    copied = _to_pil(copied)
+    copied.show()
+
+
 def _figure_to_array(fig):
     arr = mplfig_to_npimage(fig)
     return arr
