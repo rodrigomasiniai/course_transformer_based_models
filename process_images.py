@@ -19,3 +19,8 @@ def save_image(img, path):
     path.parent.mkdir(parents=True, exist_ok=True)
 
     _to_pil(img).save(str(path))
+
+
+def _figure_to_array(fig):
+    arr = mplfig_to_npimage(fig)
+    return arr
