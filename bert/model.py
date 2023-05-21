@@ -53,7 +53,7 @@ class TransformerEncoder(nn.Module):
         self.n_layers = n_layers
 
         self.enc_stack = nn.ModuleList(
-            [EncoderLayer(d_model=hidden_dim, n_heads=n_heads) for _ in range(n_layers)]
+            [EncoderLayer(d_model=hidden_dim, n_heads=n_heads, activ="gelu") for _ in range(n_layers)]
         )
 
     def forward(self, x, mask):
@@ -97,10 +97,8 @@ class BERT(nn.Module):
 
 
 if __name__ == "__main__":
-    torch.manual_seed(33)
-
     HIDDEN_DIM = 768
-    VOCAB_SIZE = 30_000
+    VOCAB_SIZE = 30_522
 
     BATCH_SIZE = 16
     SEQ_LEN = 30
@@ -109,8 +107,6 @@ if __name__ == "__main__":
     sent1_len = random.randint(0, SEQ_LEN - 1)
     seg_label = torch.as_tensor([0] + [1] * (sent1_len - 1) + [0] + [2] * (SEQ_LEN - sent1_len - 1))
 
-    # embed = Embedding(vocab_size=VOCAB_SIZE, hidden_dim=HIDDEN_DIM)
-    # embed(seq=seq, seg_label=seg_label).shape
     bert = BERT(vocab_size=VOCAB_SIZE)
     output = bert(seq=seq, seg_label=seg_label)
     print(output.shape)

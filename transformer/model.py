@@ -6,11 +6,11 @@
 import torch
 import torch.nn as nn
 from einops import rearrange
+from typing import Literal
 
 D_MODEL = 512
 N_HEADS = 8
 N_LAYERS = 6
-D_FF = 2048
 
 
 class PositionalEncoding(nn.Module):
@@ -99,24 +99,38 @@ class MultiHeadAttention(nn.Module):
 
 
 class PositionwiseFeedForward(nn.Module):
-    def __init__(self, d_model=D_MODEL, d_ff=D_FF):
+    def __init__(self, d_model=D_MODEL, activ: str=Literal["relu", "gelu"]):
         super().__init__()
 
-        self.w1 = nn.Linear(d_model, d_ff)
-        self.relu = nn.ReLU()
-        self.w2 = nn.Linear(d_ff, d_model)
+        assert activ in ["relu", "gelu"],\
+            """`activ` must be one of (`"relu"`, `"gelu"`)"""
+
+        self.d_model = d_model
+        self.activ = activ
+
+        self.mlp_dim = d_model * 4
+
+        self.proj1 = nn.Linear(d_model, self.mlp_dim) # $W_{1}$
+        if activ == "relu":
+            self.relu = nn.ReLU()
+        else:
+            self.gelu = nn.GELU()
+        self.proj2 = nn.Linear(self.mlp_dim, d_model) # $W_{2}$
         self.dropout = nn.Dropout(0.1)
 
     def forward(self, x):
-        x = self.w1(x)
-        x = self.relu(x)
-        x = self.w2(x)
+        x = self.proj1(x)
+        if self.activ == "relu":
+            x = self.relu(x)
+        else:
+            x = self.gelu(x)
+        x = self.proj2(x)
         x = self.dropout(x) # Not in the paper
         return x
 
 
 class EncoderLayer(nn.Module):
-    def __init__(self, d_model, n_heads):
+    def __init__(self, d_model, n_heads, activ):
         super().__init__()
 
         self.n_heads = n_heads
@@ -125,7 +139,7 @@ class EncoderLayer(nn.Module):
         self.self_attn = MultiHeadAttention(dim=d_model, n_heads=n_heads)
         self.norm1 = nn.LayerNorm(d_model)
 
-        self.ff = PositionwiseFeedForward(d_model=d_model)
+        self.ff = PositionwiseFeedForward(d_model=d_model, activ=activ)
         self.norm2 = nn.LayerNorm(d_model)
 
         self.dropout = nn.Dropout(0.1)
@@ -157,7 +171,7 @@ class Encoder(nn.Module):
 
         self.input = Input(vocab_size=src_vocab_size, d_model=d_model, pad_idx=src_pad_idx)
         self.enc_stack = nn.ModuleList(
-            [EncoderLayer(d_model=d_model, n_heads=n_heads) for _ in range(self.n_layers)]
+            [EncoderLayer(d_model=d_model, n_heads=n_heads, activ="relu") for _ in range(self.n_layers)]
         )
 
     def forward(self, x, mask=None):
@@ -168,7 +182,7 @@ class Encoder(nn.Module):
 
 
 class DecoderLayer(nn.Module):
-    def __init__(self, n_heads, d_model):
+    def __init__(self, n_heads, d_model, activ):
         super().__init__()
 
         self.n_heads = n_heads
@@ -180,7 +194,7 @@ class DecoderLayer(nn.Module):
         self.enc_dec_attn = MultiHeadAttention(dim=d_model, n_heads=n_heads)
         self.norm2 = nn.LayerNorm(d_model)
 
-        self.ff = PositionwiseFeedForward(d_model=d_model)
+        self.ff = PositionwiseFeedForward(d_model=d_model, activ=activ)
         self.norm3 = nn.LayerNorm(d_model)
 
         self.dropout = nn.Dropout(0.1)
@@ -217,7 +231,7 @@ class Decoder(nn.Module):
 
         self.input = Input(vocab_size=trg_vocab_size, d_model=d_model, pad_idx=trg_pad_idx)
         self.dec_stack = nn.ModuleList(
-            [DecoderLayer(n_heads=n_heads, d_model=d_model) for _ in range(self.n_layers)]
+            [DecoderLayer(n_heads=n_heads, d_model=d_model, activ="relu") for _ in range(self.n_layers)]
         )
         self.linear = nn.Linear(d_model, trg_vocab_size)
         self.softmax = nn.Softmax(dim=-1)
