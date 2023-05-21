@@ -1,4 +1,9 @@
-# https://medium.com/@pierre_guillou/byte-level-bpe-an-universal-tokenizer-but-aff932332ffe
+# Refrerences
+    # https://medium.com/@pierre_guillou/byte-level-bpe-an-universal-tokenizer-but-aff932332ffe
+    # https://velog.io/@goggling/%EC%9C%A0%EB%8B%88%EC%BD%94%EB%93%9C%EC%99%80-UTF-%EC%9D%B4%ED%95%B4%ED%95%98%EA%B8%B0
+    # https://velog.io/@zionhann/%ED%8C%8C%EC%9D%B4%EC%8D%AC-%EC%9C%A0%EB%8B%88%EC%BD%94%EB%93%9C-%EB%AC%B8%EC%9E%90-%EB%B3%80%ED%99%98%ED%95%98%EA%B8%B0
+    # https://www.compart.com/en/unicode/U+7FD2
+    # https://konghana01.tistory.com/65
 
 from transformers import GPT2TokenizerFast
 import tokenizers
@@ -101,3 +106,10 @@ tokenizer.decode([168, 243, 230])
 tokenizer.decode([168, 243, 100])
 tokenizer.decode([168, 243])
 tokenizer.id_to_token(220)
+
+
+def tokenize(char):
+    bytes = char.encode("utf-8")
+    hexes = bytes.hex()
+    tokenized = [chr(int(f"""0x{hexes[i: i + 2]}""", base=16)) + 1 for i in range(len(hexes))[:: 2]]
+    return tokenized
