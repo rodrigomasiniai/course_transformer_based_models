@@ -1,47 +1,116 @@
-- Reference: https://github.com/codertimo/BERT-pytorch
+# References
+    # https://github.com/codertimo/BERT-pytorch/tree/master/bert_pytorch/model
 
 import torch
 import torch.nn as nn
 import random
 
-
-class SegmentEmbedding(nn.Embedding):
-    def __init__(self, dim=512):
-        # `num_embeddings`가 왜 2가 아니라 3이지?
-        # super().__init__(3, dim, padding_idx=0)
-        super().__init__(2, dim, padding_idx=0)
+from transformer.model import PositionalEncoding, EncoderLayer, get_pad_mask
 
 
 class TokenEmbedding(nn.Embedding):
-    def __init__(self, vocab_size, dim=512):
-        super().__init__(vocab_size, dim, padding_idx=0)
+    def __init__(self, vocab_size, hidden_dim, pad_idx=0):
+        super().__init__(num_embeddings=vocab_size, embedding_dim=hidden_dim, padding_idx=pad_idx)
 
 
-class BERTEmbedding(nn.Module):
-    def __init__(self, vocab_size, dim, dropout=0.1):
+class SegmentEmbedding(nn.Embedding):
+    def __init__(self, hidden_dim, pad_idx=0):
+        super().__init__(3, hidden_dim, padding_idx=pad_idx)
+
+
+class PositionEmbedding(PositionalEncoding):
+    def __init__(self, hidden_dim):
+        super().__init__(dim=hidden_dim)
+
+
+class Embedding(nn.Module):
+    def __init__(self, vocab_size, hidden_dim, pad_idx=0, dropout=0.1):
         super().__init__()
-        self.token = TokenEmbedding(vocab_size=vocab_size, dim=dim)
-        # self.position = PositionEmbedding(d_model=self.token.embedding_dim)
-        self.segment = SegmentEmbedding(dim)
-        self.dropout = nn.Dropout(dropout)
-        self.dim = dim
 
-    def forward(self, sequence, segment_label):
-        # x = self.token(sequence) + self.position(sequence) + self.segment(segment_label)
-        x = self.token(sequence) + self.segment(segment_label)
-        return self.dropout(x)
+        self.vocab_size = vocab_size
+        self.hidden_dim = hidden_dim
+
+        self.token_embed = TokenEmbedding(vocab_size=vocab_size, hidden_dim=hidden_dim, pad_idx=pad_idx)
+        self.seg_embed = SegmentEmbedding(hidden_dim=hidden_dim, pad_idx=pad_idx)
+        self.pos_embed = PositionEmbedding(hidden_dim=hidden_dim)
+
+        self.dropout = nn.Dropout(dropout)
+
+    def forward(self, seq, seg_label):
+        x = self.token_embed(seq)
+        x = self.pos_embed(x)
+        x += self.seg_embed(seg_label)
+        x = self.dropout(x)
+        return x
+
+
+class TransformerEncoder(nn.Module):
+    def __init__(self, n_layers, hidden_dim, n_heads):
+        super().__init__()
+
+        self.n_heads = n_heads
+        self.hidden_dim = hidden_dim
+        self.n_layers = n_layers
+
+        self.enc_stack = nn.ModuleList(
+            [EncoderLayer(d_model=hidden_dim, n_heads=n_heads) for _ in range(n_layers)]
+        )
+
+    def forward(self, x, mask):
+        for enc_layer in self.enc_stack:
+            x = enc_layer(x, mask=mask)
+        return x
+
+
+class BERT(nn.Module):
+    # BERT-BASE: `n_layer=12, hidden_dim=768, n_heads=12`, 110M parameters
+    # BERT-LARGE: `n_layer=24, hidden_dim=1024, n_heads=16`, 340M parameters
+    def __init__(
+        self,
+        vocab_size,
+        n_layers=12,
+        hidden_dim=768,
+        n_heads=12,
+        n_classes=1000,
+        pad_idx=0
+    ):
+        super().__init__()
+
+        self.vocab_size = vocab_size
+        self.n_layers = n_layers
+        self.hidden_dim = hidden_dim
+        self.n_heads = n_heads
+        self.n_classes = n_classes
+        self.pad_idx = pad_idx
+
+        self.embed = Embedding(vocab_size=vocab_size, hidden_dim=hidden_dim, pad_idx=pad_idx)
+        self.tf_enc = TransformerEncoder(n_layers=n_layers, hidden_dim=hidden_dim, n_heads=n_heads)
+        self.cls_proj = nn.Linear(HIDDEN_DIM, n_classes)
+
+    def forward(self, seq, seg_label):
+        x = self.embed(seq=seq, seg_label=seg_label)
+
+        pad_mask = get_pad_mask(seq=seq, pad_idx=self.pad_idx)
+        x = self.tf_enc(x, mask=pad_mask)
+        x = self.cls_proj(x[:, 0, :])
+        return x
 
 
 if __name__ == "__main__":
     torch.manual_seed(33)
 
-    dim = 512
-    vocab_size = 30_000
-    segment = SegmentEmbedding(dim)
-    token = TokenEmbedding(vocab_size=vocab_size, dim=dim)
-    
-    bert_embedding = BERTEmbedding(vocab_size=vocab_size, dim=dim)
-    sequence = torch.randint(low=0, high=vocab_size - 1, size=(8,))
-    sent1_len = random.randint(0, len(sequence) - 1)
-    segment_label = torch.as_tensor([0] * sent1_len + [1] * (len(sequence) - sent1_len))
-    bert_embedding(sequence=sequence, segment_label=segment_label)
+    HIDDEN_DIM = 768
+    VOCAB_SIZE = 30_000
+
+    BATCH_SIZE = 16
+    SEQ_LEN = 30
+
+    seq = torch.randint(low=0, high=VOCAB_SIZE, size=(BATCH_SIZE, SEQ_LEN))
+    sent1_len = random.randint(0, SEQ_LEN - 1)
+    seg_label = torch.as_tensor([0] + [1] * (sent1_len - 1) + [0] + [2] * (SEQ_LEN - sent1_len - 1))
+
+    # embed = Embedding(vocab_size=VOCAB_SIZE, hidden_dim=HIDDEN_DIM)
+    # embed(seq=seq, seg_label=seg_label).shape
+    bert = BERT(vocab_size=VOCAB_SIZE)
+    output = bert(seq=seq, seg_label=seg_label)
+    print(output.shape)

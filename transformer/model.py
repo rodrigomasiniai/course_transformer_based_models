@@ -13,8 +13,30 @@ N_LAYERS = 6
 D_FF = 2048
 
 
+class PositionalEncoding(nn.Module):
+    def __init__(self, dim: int, max_len: int=5000) -> None:
+        super().__init__()
+
+        self.dim = dim
+
+        pos = torch.arange(max_len).unsqueeze(1) # $pos$
+        i = torch.arange(dim // 2).unsqueeze(0) # $i$
+        angle = pos / (10_000 ** (2 * i / dim)) # $ \sin(\text{pos} / 10000^{2 * i  / d_{\text{model}}})$
+
+        self.pe_mat = torch.zeros(size=(max_len, dim))
+        self.pe_mat[:, 0:: 2] = torch.sin(angle) # $text{PE}_(\text{pos}, 2i)$
+        self.pe_mat[:, 1:: 2] = torch.cos(angle) # $text{PE}_(\text{pos}, 2i + 1)$
+
+        self.register_buffer("pos_enc_mat", self.pe_mat)
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        _, l, _ = x.shape
+        x += self.pe_mat.unsqueeze(0)[:, : l, :]
+        return x
+
+
 class Input(nn.Module):
-    def __init__(self, vocab_size, d_model, pad_idx):
+    def __init__(self, vocab_size, d_model, pad_idx=0):
         super().__init__()
 
         self.vocab_size = vocab_size
@@ -27,33 +49,11 @@ class Input(nn.Module):
 
     def forward(self, x):
         x = self.embed(x)
-        # "In the embedding layers, we multiply those weights by $\sqrt{d_{text{model}}}$."
-        # in section 3.4 of the paper.
-        x *= self.d_model ** 0.5
+        x *= self.d_model ** 0.5 # "In the embedding layers
+            # we multiply those weights by $\sqrt{d_{text{model}}}$."
+            # in section 3.4 of the paper.
         x = self.pos_enc(x)
         x = self.dropout(x) # Not in the paper
-        return x
-
-
-class PositionalEncoding(nn.Module):
-    def __init__(self, dim: int, max_len: int=5000) -> None:
-        super().__init__()
-
-        pos = torch.arange(max_len).unsqueeze(1)
-        i = torch.arange(dim // 2).unsqueeze(0)
-        angle = pos / (10_000 ** (2 * i / dim))
-
-        self.pe = torch.zeros(size=(max_len, dim))
-        self.pe[:, 0:: 2] = torch.sin(angle)
-        self.pe[:, 1:: 2] = torch.cos(angle)
-
-    def forward(self, x: torch.Tensor) -> torch.Tensor:
-        """
-        Arguments:
-            x: Tensor, shape `[batch_size, seq_len, embedding_dim]`
-        """
-        b, l, _ = x.shape
-        x += self.pe.unsqueeze(0)[:, : l, :]
         return x
 
 
@@ -66,19 +66,19 @@ class MultiHeadAttention(nn.Module):
 
         self.head_dim = dim // n_heads # $d_{k}$, $d_{v}$
 
-        self.w_q = nn.Linear(dim, dim, bias=False)
-        self.w_k = nn.Linear(dim, dim, bias=False)
-        self.w_v = nn.Linear(dim, dim, bias=False)
+        self.q_proj = nn.Linear(dim, dim, bias=False) # $W^{Q}_{i}$
+        self.w_proj = nn.Linear(dim, dim, bias=False) # $W^{K}_{i}$
+        self.w_proj = nn.Linear(dim, dim, bias=False) # $W^{V}_{i}$
 
         self.softmax = nn.Softmax(dim=2)
         self.dropout = nn.Dropout(0.1)
-        self.w_o = nn.Linear(dim, dim, bias=False)
+        self.output_proj = nn.Linear(dim, dim, bias=False) # $W^{O}$
 
     def forward(self, q, k, v, mask=None):
         b, l, _ = q.shape
         _, m, _ = k.shape
 
-        q, k, v = self.w_q(q), self.w_k(k), self.w_v(v)
+        q, k, v = self.q_proj(q), self.w_proj(k), self.w_proj(v)
         q = q.view(b, l, self.head_dim, self.n_heads)
         k = k.view(b, m, self.head_dim, self.n_heads)
         v = v.view(b, m, self.head_dim, self.n_heads)
@@ -94,7 +94,7 @@ class MultiHeadAttention(nn.Module):
         x = torch.einsum("blmn,bmdn->bldn", attn_weight, k) # "MatMul"
         x = rearrange(x, pattern="b l d n -> b l (d n)")
 
-        x = self.w_o(x)
+        x = self.output_proj(x)
         return x
 
 
@@ -130,7 +130,7 @@ class EncoderLayer(nn.Module):
 
         self.dropout = nn.Dropout(0.1)
 
-    def forward(self, x, mask):
+    def forward(self, x, mask=None):
         attn_output = self.self_attn(q=x, k=x, v=x, mask=mask) # "Multi-Head Attention" in "Figure 1" of the paper
         x += attn_output # "Add"
         x = self.norm1(x) # "& Norm"
@@ -160,7 +160,7 @@ class Encoder(nn.Module):
             [EncoderLayer(d_model=d_model, n_heads=n_heads) for _ in range(self.n_layers)]
         )
 
-    def forward(self, x, mask):
+    def forward(self, x, mask=None):
         x = self.input(x)
         for enc_layer in self.enc_stack:
             x = enc_layer(x, mask=mask)
@@ -185,7 +185,7 @@ class DecoderLayer(nn.Module):
 
         self.dropout = nn.Dropout(0.1)
 
-    def forward(self, x, enc_output, mask):
+    def forward(self, x, enc_output, mask=None):
         attn_output = self.self_attn(q=x, k=x, v=x) # "Masked Multi-Head Attention" in "Figure 1" of the paper
         x += attn_output # "Add"
         x = self.norm1(x) # "& Norm"
@@ -222,13 +222,18 @@ class Decoder(nn.Module):
         self.linear = nn.Linear(d_model, trg_vocab_size)
         self.softmax = nn.Softmax(dim=-1)
 
-    def forward(self, x, enc_output, mask):
+    def forward(self, x, enc_output, mask=None):
         x = self.input(x)
         for dec_layer in self.dec_stack:
             x = dec_layer(x, enc_output=enc_output, mask=mask)
         x = self.linear(x)
         x = self.softmax(x)
         return x
+
+
+def get_pad_mask(seq, pad_idx=0):
+    mask = (seq == pad_idx).unsqueeze(2).unsqueeze(3)
+    return mask
 
 
 class Transformer(nn.Module):
@@ -260,24 +265,20 @@ class Transformer(nn.Module):
             trg_vocab_size=trg_vocab_size, trg_seq_len=trg_seq_len, trg_pad_idx=trg_pad_idx
         )
 
-        # "We share the same weight matrix between the two embedding layers and the pre-softmax linear transformation"
-        # in # section 3.4 of the paper.
+        # "We share the same weight matrix between the two embedding layers
+        # and the pre-softmax linear transformation" in section 3.4 of the paper.
         self.dec.input.embed.weight = self.enc.input.embed.weight
         self.dec.linear.weight = self.dec.input.embed.weight
 
-    def _get_pad_mask(self, seq, pad_idx):
-        mask = (seq == pad_idx).unsqueeze(2).unsqueeze(3)
-        return mask
-
+    # "Prevent positions from attending to subsequent positions." in section 3.1 of the paper
     def _get_subsequent_info_mask(self):
-        # "Prevent positions from attending to subsequent positions." in section 3.1 of the paper
         mask = torch.tril(torch.ones(size=(self.trg_seq_len, self.src_seq_len)), diagonal=0).bool()
         mask = mask.unsqueeze(0).unsqueeze(3)
         return mask
 
     def forward(self, src_seq, trg_seq):
-        src_pad_mask = self._get_pad_mask(seq=src_seq, pad_idx=self.src_pad_idx)
-        trg_pad_mask = self._get_pad_mask(seq=trg_seq, pad_idx=self.trg_pad_idx)
+        src_pad_mask = get_pad_mask(seq=src_seq, pad_idx=self.src_pad_idx)
+        trg_pad_mask = get_pad_mask(seq=trg_seq, pad_idx=self.trg_pad_idx)
         trg_subseq_mask = self._get_subsequent_info_mask()
         trg_mask = (trg_pad_mask | trg_subseq_mask)
 
