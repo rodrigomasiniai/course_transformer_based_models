@@ -7,6 +7,7 @@ from collections import defaultdict
 from pathlib import Path
 from tqdm.auto import tqdm
 import json
+import argparse
 
 TOKENIZER = AutoTokenizer.from_pretrained("bert-base-cased")
 
@@ -117,7 +118,6 @@ def build_vocab(freqs, splits, vocab_size):
                 if best_pair[1].startswith("##")
                 else best_pair[0] + best_pair[1]
             )
-            # vocab.append(new_token)
             vocab[new_token] = len(vocab)
 
             pbar.update(1)
@@ -147,13 +147,16 @@ def tokenize(text, vocab):
 
 
 if __name__ == "__main__":
-    corpus = collect_corpus("/Users/jongbeomkim/Documents/datasets/bookcorpus_subset")
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--corpus_dir")
+    args = parser.parse_args()
+
+    corpus = collect_corpus(args.corpus_dir)
 
     freqs = get_pretoken_frequencies(corpus)
     splits = split_pretokens(pretokens=freqs.keys())
     vocab = build_vocab(freqs=freqs, splits=splits, vocab_size=1200)
 
     json_path = "vocab.json"
-    # json_path = "/Users/jongbeomkim/Desktop/workspace/transformer_based_models/bert/vocab.json"
     with open(json_path, mode="w") as f:
         json.dump(vocab, f)

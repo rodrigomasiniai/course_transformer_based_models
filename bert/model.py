@@ -7,6 +7,8 @@ import random
 
 from transformer.model import PositionalEncoding, EncoderLayer, get_pad_mask
 
+DROPOUT_P = 0.1
+
 
 class TokenEmbedding(nn.Embedding):
     def __init__(self, vocab_size, hidden_dim, pad_idx=0):
@@ -24,7 +26,7 @@ class PositionEmbedding(PositionalEncoding):
 
 
 class Embedding(nn.Module):
-    def __init__(self, vocab_size, hidden_dim, pad_idx=0, dropout=0.1):
+    def __init__(self, vocab_size, hidden_dim, pad_idx=0, dropout_p=DROPOUT_P):
         super().__init__()
 
         self.vocab_size = vocab_size
@@ -34,7 +36,7 @@ class Embedding(nn.Module):
         self.seg_embed = SegmentEmbedding(hidden_dim=hidden_dim, pad_idx=pad_idx)
         self.pos_embed = PositionEmbedding(hidden_dim=hidden_dim)
 
-        self.dropout = nn.Dropout(dropout)
+        self.dropout = nn.Dropout(dropout_p)
 
     def forward(self, seq, seg_label):
         x = self.token_embed(seq)
