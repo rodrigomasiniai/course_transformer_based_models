@@ -1,21 +1,16 @@
 # References
     # https://github.com/codertimo/BERT-pytorch/blob/master/bert_pytorch/dataset/dataset.py
 
-import torch
 from torch.utils.data import Dataset
-from tqdm import tqdm
 import random
 import json
 from pathlib import Path
-# import pickle as pk
 
 from wordpiece import collect_corpus, tokenize
 
 
 class BERTDataset(Dataset):
     def __init__(self, vocab_path, corpus_dir):
-        # super().__init__()
-
         self.vocab_path = vocab_path
         self.corpus_dir = corpus_dir
 
