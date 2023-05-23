@@ -47,7 +47,7 @@ class Embedding(nn.Module):
         return x
 
 
-class TransformerEncoder(nn.Module):
+class TransformerBlock(nn.Module):
     def __init__(self, n_layers, hidden_dim, n_heads):
         super().__init__()
 
@@ -74,7 +74,6 @@ class BERT(nn.Module):
         n_layers=12,
         hidden_dim=768,
         n_heads=12,
-        n_classes=1000,
         pad_idx=0
     ):
         super().__init__()
@@ -83,19 +82,59 @@ class BERT(nn.Module):
         self.n_layers = n_layers
         self.hidden_dim = hidden_dim
         self.n_heads = n_heads
-        self.n_classes = n_classes
         self.pad_idx = pad_idx
 
         self.embed = Embedding(vocab_size=vocab_size, hidden_dim=hidden_dim, pad_idx=pad_idx)
-        self.tf_enc = TransformerEncoder(n_layers=n_layers, hidden_dim=hidden_dim, n_heads=n_heads)
-        self.cls_proj = nn.Linear(HIDDEN_DIM, n_classes)
+        self.tf_enc = TransformerBlock(n_layers=n_layers, hidden_dim=hidden_dim, n_heads=n_heads)
 
     def forward(self, seq, seg_label):
         x = self.embed(seq=seq, seg_label=seg_label)
 
         pad_mask = get_pad_mask(seq=seq, pad_idx=self.pad_idx)
         x = self.tf_enc(x, self_attn_mask=pad_mask)
-        x = self.cls_proj(x[:, 0, :])
+        return x
+
+
+class ClassificationHead(nn.Module):
+    def __init__(self, hidden_dim=768, n_classes=1000):
+        super().__init__()
+
+        self.hidden_dim = hidden_dim
+        self.n_classed = n_classes
+
+        self.cls_proj = nn.Linear(hidden_dim, n_classes)
+
+    def forward(self, x):
+        x = x[:, 0, :]
+        x = self.cls_proj(x)
+        return x
+
+
+class MaskedLanguageModelHead(nn.Module):
+    def __init__(self, vocab_size, hidden_dim=768):
+        super().__init__()
+
+        self.vocab_size = vocab_size
+        self.hidden_dim = hidden_dim
+
+        self.cls_proj = nn.Linear(hidden_dim, vocab_size)
+
+    def forward(self, x):
+        x = self.cls_proj(x)
+        return x
+
+
+class NextSentencePredictionHead(nn.Module):
+    def __init__(self, hidden_dim=768):
+        super().__init__()
+
+        self.hidden_dim = hidden_dim
+
+        self.cls_proj = nn.Linear(hidden_dim, 2)
+
+    def forward(self, x):
+        x = x[:, 0, :]
+        x = self.cls_proj(x)
         return x
 
 
@@ -103,8 +142,8 @@ if __name__ == "__main__":
     HIDDEN_DIM = 768
     VOCAB_SIZE = 30_522
 
-    BATCH_SIZE = 16
-    SEQ_LEN = 30
+    BATCH_SIZE = 8
+    SEQ_LEN = 512
 
     seq = torch.randint(low=0, high=VOCAB_SIZE, size=(BATCH_SIZE, SEQ_LEN))
     sent1_len = random.randint(0, SEQ_LEN - 1)

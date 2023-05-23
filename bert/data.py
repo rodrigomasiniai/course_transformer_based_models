@@ -6,10 +6,9 @@ import torch.nn.functional as F
 from torch.utils.data import Dataset, DataLoader
 import random
 import json
-from pathlib import Path
 
-from wordpiece import collect_corpus, tokenize
-from model import BERT
+from bert.wordpiece import collect_corpus, tokenize
+from bert.model import BERT
 
 
 class BERTDataset(Dataset):
@@ -61,8 +60,8 @@ class BERTDataset(Dataset):
         masked_ids.extend([self.pad_id] * (self.seq_len - len(masked_ids)))
         pred_trg.extend([self.pad_id] * (self.seq_len - len(pred_trg)))
 
-        gt_ids = torch.as_tensor(gt_ids, dtype=torch.int32)
-        masked_ids = torch.as_tensor(masked_ids, dtype=torch.int32)
+        gt_ids = torch.as_tensor(gt_ids, dtype=torch.int64)
+        masked_ids = torch.as_tensor(masked_ids, dtype=torch.int64)
         pred_trg = torch.as_tensor(pred_trg, dtype=torch.bool)
         output = {"ground_truth_ids": gt_ids, "masked_ids": masked_ids, "prediction_target": pred_trg}
         return output
@@ -92,8 +91,9 @@ class BERTDataset(Dataset):
 
         seg_label.extend([self.pad_id] * (self.seq_len - len(seg_label)))
 
-        seg_label = torch.as_tensor(seg_label, dtype=torch.int32)
-        is_next = torch.as_tensor(is_next, dtype=torch.bool)
+        seg_label = torch.as_tensor(seg_label, dtype=torch.int64)
+        # is_next = torch.as_tensor(is_next, dtype=torch.bool)
+        is_next = torch.as_tensor(is_next, dtype=torch.int64)
         output = {"tokens": tokens, "segment_label": seg_label, "is_next": is_next}
         return output
 
@@ -116,7 +116,6 @@ if __name__ == "__main__":
     corpus_dir = "/Users/jongbeomkim/Documents/datasets/bookscorpus_subset"
 
     SEQ_LEN = 512
-    # BATCH_SIZE = 256
     BATCH_SIZE = 8
     ds = BERTDataset(vocab_path=vocab_path, corpus_dir=corpus_dir, seq_len=SEQ_LEN)
     dl = DataLoader(dataset=ds, batch_size=BATCH_SIZE, shuffle=True, drop_last=True)
@@ -128,13 +127,3 @@ if __name__ == "__main__":
             data["segment_label"].shape,
             data["is_next"].shape
         )
-        logit = bert(seq=data["masked_ids"], seg_label=data["segment_label"])
-        logit.shape
-        logit
-        softmax = F.softmax(logit, dim=1)
-        softmax.shape
-        torch.argmax(softmax, dim=0).shape
-
-    N_STEPS = 1_000_000
-    N_WARMUP_STEPS = 10_000
-    MAX_LR = 1e-4
