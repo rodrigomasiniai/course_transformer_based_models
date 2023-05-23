@@ -17,6 +17,7 @@ class TokenEmbedding(nn.Embedding):
 
 class SegmentEmbedding(nn.Embedding):
     def __init__(self, hidden_dim, pad_idx=0):
+        # `num_embeddings=3`: `"[PAD]"` 토큰 때문!
         super().__init__(3, hidden_dim, padding_idx=pad_idx)
 
 
@@ -58,9 +59,9 @@ class TransformerEncoder(nn.Module):
             [EncoderLayer(d_model=hidden_dim, n_heads=n_heads, activ="gelu") for _ in range(n_layers)]
         )
 
-    def forward(self, x, mask):
+    def forward(self, x, self_attn_mask):
         for enc_layer in self.enc_stack:
-            x = enc_layer(x, mask=mask)
+            x = enc_layer(x, mask=self_attn_mask)
         return x
 
 
@@ -93,7 +94,7 @@ class BERT(nn.Module):
         x = self.embed(seq=seq, seg_label=seg_label)
 
         pad_mask = get_pad_mask(seq=seq, pad_idx=self.pad_idx)
-        x = self.tf_enc(x, mask=pad_mask)
+        x = self.tf_enc(x, self_attn_mask=pad_mask)
         x = self.cls_proj(x[:, 0, :])
         return x
 

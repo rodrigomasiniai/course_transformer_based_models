@@ -174,10 +174,10 @@ class Encoder(nn.Module):
             [EncoderLayer(d_model=d_model, n_heads=n_heads, activ="relu") for _ in range(self.n_layers)]
         )
 
-    def forward(self, x, mask=None):
+    def forward(self, x, self_attn_mask):
         x = self.input(x)
         for enc_layer in self.enc_stack:
-            x = enc_layer(x, mask=mask)
+            x = enc_layer(x, mask=self_attn_mask)
         return x
 
 
@@ -199,12 +199,13 @@ class DecoderLayer(nn.Module):
 
         self.dropout = nn.Dropout(0.1)
 
-    def forward(self, x, enc_output, mask=None):
-        attn_output = self.self_attn(q=x, k=x, v=x) # "Masked Multi-Head Attention" in "Figure 1" of the paper
+    def forward(self, x, enc_output, self_attn_mask, enc_dec_mask):
+        attn_output = self.self_attn(q=x, k=x, v=x, mask=self_attn_mask) # "Masked Multi-Head Attention"
+            # in "Figure 1" of the paper
         x += attn_output # "Add"
         x = self.norm1(x) # "& Norm"
 
-        attn_output = self.enc_dec_attn(q=x, k=enc_output, v=enc_output, mask=mask) # "Multi-Head Attention"
+        attn_output = self.enc_dec_attn(q=x, k=enc_output, v=enc_output, mask=enc_dec_mask) # "Multi-Head Attention"
         x += attn_output # "Add"
         x = self.norm2(x) # "& Norm"
 
@@ -236,10 +237,10 @@ class Decoder(nn.Module):
         self.linear = nn.Linear(d_model, trg_vocab_size)
         self.softmax = nn.Softmax(dim=-1)
 
-    def forward(self, x, enc_output, mask=None):
+    def forward(self, x, enc_output, self_attn_mask=None, enc_dec_mask=None):
         x = self.input(x)
         for dec_layer in self.dec_stack:
-            x = dec_layer(x, enc_output=enc_output, mask=mask)
+            x = dec_layer(x, enc_output=enc_output, self_attn_mask=self_attn_mask, enc_dec_mask=enc_dec_mask)
         x = self.linear(x)
         x = self.softmax(x)
         return x
@@ -294,10 +295,14 @@ class Transformer(nn.Module):
         src_pad_mask = get_pad_mask(seq=src_seq, pad_idx=self.src_pad_idx)
         trg_pad_mask = get_pad_mask(seq=trg_seq, pad_idx=self.trg_pad_idx)
         trg_subseq_mask = self._get_subsequent_info_mask()
-        trg_mask = (trg_pad_mask | trg_subseq_mask)
 
-        enc_output = self.enc(src_seq, mask=src_pad_mask)
-        dec_output = self.dec(trg_seq, enc_output=enc_output, mask=trg_mask)
+        enc_output = self.enc(src_seq, self_attn_mask=src_pad_mask)
+        dec_output = self.dec(
+            trg_seq,
+            enc_output=enc_output,
+            self_attn_mask=trg_pad_mask,
+            enc_dec_mask=(trg_pad_mask | trg_subseq_mask) # `&` or `|`??
+        )
         return dec_output
 
 
