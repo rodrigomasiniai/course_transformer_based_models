@@ -1,4 +1,5 @@
 import torch
+import torch.nn as nn
 import torch.nn.functional as F
 from torch.utils.data import Dataset, DataLoader
 import random
@@ -13,12 +14,13 @@ class BERTLoss(nn.Module):
         super().__init__()
         self.lamb = lamb
 
-    def forward(self, mlm_logit, nsp_logit, gt):
-        raw_mlm_loss = F.cross_entropy(mlm_logit.permute(0, 2, 1), gt["ground_truth_ids"], reduction="none")
-        raw_mlm_loss *= gt["prediction_target"]
-        mlm_loss = raw_loss.sum()
+    def forward(self, mlm_logits, nsp_logits, labels):
+        raw_mlm_loss = F.cross_entropy(mlm_logits.permute(0, 2, 1), labels["ground_truth_ids"], reduction="none")
+        raw_mlm_loss *= labels["prediction_target"]
+        mlm_loss = raw_mlm_loss.sum()
 
-        nsp_loss = F.cross_entropy(nsp_logit, gt["is_next"])
+        nsp_loss = F.cross_entropy(nsp_logits, labels["is_next"])
+        # `mlm_loss`와 `nsp_loss` 사이의 Imbalance??
         loss = mlm_loss + self.lamb * nsp_loss
         return mlm_loss, nsp_loss
 
@@ -41,12 +43,12 @@ if __name__ == "__main__":
     dl = DataLoader(dataset=ds, batch_size=BATCH_SIZE, shuffle=True, drop_last=True)
     for batch, data in enumerate(dl, start=1):
         bert_output = bert(seq=data["masked_ids"], seg_label=data["segment_label"])
-        mlm_logit = mlm_head(bert_output)
-        nsp_logit = nsp_head(bert_output)
+        mlm_logits = mlm_head(bert_output)
+        nsp_logits = nsp_head(bert_output)
         
-        criterion(mlm_logit=mlm_logit, nsp_logit=nsp_logit, gt=data)
+        criterion(mlm_logits=mlm_logits, nsp_logits=nsp_logits, labels=data)
         
-        bert_output.shape, mlm_logit.shape, nsp_logit.shape
+        bert_output.shape, mlm_logits.shape, nsp_logits.shape
 
     N_STEPS = 1_000_000
     N_WARMUP_STEPS = 10_000
