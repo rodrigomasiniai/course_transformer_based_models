@@ -11,6 +11,7 @@ from typing import Literal
 D_MODEL = 512
 N_HEADS = 8
 N_LAYERS = 6
+DROP_PROB = 0.1
 
 
 class PositionalEncoding(nn.Module):
@@ -36,20 +37,20 @@ class PositionalEncoding(nn.Module):
 
 
 class Input(nn.Module):
-    def __init__(self, vocab_size, d_model, pad_idx=0):
+    def __init__(self, vocab_size, dim, pad_idx=0, drop_prob=DROP_PROB):
         super().__init__()
 
         self.vocab_size = vocab_size
-        self.d_model = d_model
+        self.dim = dim
         self.pad_idx = pad_idx
 
-        self.embed = nn.Embedding(num_embeddings=vocab_size, embedding_dim=d_model, padding_idx=pad_idx)
-        self.pos_enc = PositionalEncoding(dim=d_model)
-        self.dropout = nn.Dropout(0.1)
+        self.embed = nn.Embedding(num_embeddings=vocab_size, embedding_dim=dim, padding_idx=pad_idx)
+        self.pos_enc = PositionalEncoding(dim=dim)
+        self.dropout = nn.Dropout(drop_prob)
 
     def forward(self, x):
         x = self.embed(x)
-        x *= self.d_model ** 0.5 # "In the embedding layers
+        x *= self.dim ** 0.5 # "In the embedding layers
             # we multiply those weights by $\sqrt{d_{text{model}}}$."
             # in section 3.4 of the paper.
         x = self.pos_enc(x)
@@ -58,7 +59,7 @@ class Input(nn.Module):
 
 
 class MultiHeadAttention(nn.Module):
-    def __init__(self, dim=D_MODEL, n_heads=N_HEADS):
+    def __init__(self, dim, n_heads, drop_prob=DROP_PROB):
         super().__init__()
     
         self.dim = dim # $d_{model}$
@@ -71,7 +72,7 @@ class MultiHeadAttention(nn.Module):
         self.w_proj = nn.Linear(dim, dim, bias=False) # $W^{V}_{i}$
 
         self.softmax = nn.Softmax(dim=2)
-        self.dropout = nn.Dropout(0.1)
+        self.dropout = nn.Dropout(drop_prob)
         self.output_proj = nn.Linear(dim, dim, bias=False) # $W^{O}$
 
     def forward(self, q, k, v, mask=None):
@@ -99,24 +100,23 @@ class MultiHeadAttention(nn.Module):
 
 
 class PositionwiseFeedForward(nn.Module):
-    def __init__(self, d_model=D_MODEL, activ: str=Literal["relu", "gelu"]):
+    def __init__(self, dim, mlp_dim, activ: Literal["relu", "gelu"]="relu", drop_prob=DROP_PROB):
         super().__init__()
 
         assert activ in ["relu", "gelu"],\
             """`activ` must be one of (`"relu"`, `"gelu"`)"""
 
-        self.d_model = d_model
+        self.dim = dim
+        self.mlp_dim = mlp_dim
         self.activ = activ
 
-        self.mlp_dim = d_model * 4
-
-        self.proj1 = nn.Linear(d_model, self.mlp_dim) # $W_{1}$
+        self.proj1 = nn.Linear(dim, self.mlp_dim) # $W_{1}$
         if activ == "relu":
             self.relu = nn.ReLU()
         else:
             self.gelu = nn.GELU()
-        self.proj2 = nn.Linear(self.mlp_dim, d_model) # $W_{2}$
-        self.dropout = nn.Dropout(0.1)
+        self.proj2 = nn.Linear(self.mlp_dim, dim) # $W_{2}$
+        self.dropout = nn.Dropout(drop_prob)
 
     def forward(self, x):
         x = self.proj1(x)
@@ -130,19 +130,20 @@ class PositionwiseFeedForward(nn.Module):
 
 
 class EncoderLayer(nn.Module):
-    def __init__(self, d_model, n_heads, activ):
+    def __init__(self, n_heads, dim, mlp_dim, activ, drop_prob=DROP_PROB):
         super().__init__()
 
         self.n_heads = n_heads
-        self.d_model = d_model
+        self.dim = dim
+        self.mlp_dim = mlp_dim
 
-        self.self_attn = MultiHeadAttention(dim=d_model, n_heads=n_heads)
-        self.norm1 = nn.LayerNorm(d_model)
+        self.self_attn = MultiHeadAttention(dim=dim, n_heads=n_heads)
+        self.norm1 = nn.LayerNorm(dim)
 
-        self.ff = PositionwiseFeedForward(d_model=d_model, activ=activ)
-        self.norm2 = nn.LayerNorm(d_model)
+        self.ff = PositionwiseFeedForward(dim=dim, mlp_dim=mlp_dim, activ=activ)
+        self.norm2 = nn.LayerNorm(dim)
 
-        self.dropout = nn.Dropout(0.1)
+        self.dropout = nn.Dropout(drop_prob)
 
     def forward(self, x, mask=None):
         attn_output = self.self_attn(q=x, k=x, v=x, mask=mask) # "Multi-Head Attention" in "Figure 1" of the paper
@@ -157,21 +158,20 @@ class EncoderLayer(nn.Module):
 
 
 class Encoder(nn.Module):
-    def __init__(
-        self, src_vocab_size, src_seq_len, src_pad_idx, n_heads=N_HEADS, d_model=D_MODEL, n_layers=N_LAYERS
-    ):
+    def __init__(self, src_vocab_size, src_seq_len, src_pad_idx, n_heads, dim, mlp_dim, n_layers):
         super().__init__()
 
         self.src_vocab_size = src_vocab_size
         self.src_seq_len = src_seq_len
         self.src_pad_idx = src_pad_idx
         self.n_heads = n_heads
-        self.d_model = d_model
+        self.dim = dim
+        self.mlp_dim = mlp_dim
         self.n_layers = n_layers
 
-        self.input = Input(vocab_size=src_vocab_size, d_model=d_model, pad_idx=src_pad_idx)
+        self.input = Input(vocab_size=src_vocab_size, dim=dim, pad_idx=src_pad_idx)
         self.enc_stack = nn.ModuleList(
-            [EncoderLayer(d_model=d_model, n_heads=n_heads, activ="relu") for _ in range(self.n_layers)]
+            [EncoderLayer(n_heads=n_heads, dim=dim, mlp_dim=mlp_dim, activ="relu") for _ in range(self.n_layers)]
         )
 
     def forward(self, x, self_attn_mask):
@@ -182,22 +182,22 @@ class Encoder(nn.Module):
 
 
 class DecoderLayer(nn.Module):
-    def __init__(self, n_heads, d_model, activ):
+    def __init__(self, n_heads, dim, mlp_dim, activ, drop_prob=DROP_PROB):
         super().__init__()
 
         self.n_heads = n_heads
-        self.d_model = d_model
+        self.dim = dim
 
-        self.self_attn = MultiHeadAttention(dim=d_model, n_heads=n_heads)
-        self.norm1 = nn.LayerNorm(d_model)
+        self.self_attn = MultiHeadAttention(dim=dim, n_heads=n_heads)
+        self.norm1 = nn.LayerNorm(dim)
 
-        self.enc_dec_attn = MultiHeadAttention(dim=d_model, n_heads=n_heads)
-        self.norm2 = nn.LayerNorm(d_model)
+        self.enc_dec_attn = MultiHeadAttention(dim=dim, n_heads=n_heads)
+        self.norm2 = nn.LayerNorm(dim)
 
-        self.ff = PositionwiseFeedForward(d_model=d_model, activ=activ)
-        self.norm3 = nn.LayerNorm(d_model)
+        self.ff = PositionwiseFeedForward(dim=dim, mlp_dim=mlp_dim, activ=activ)
+        self.norm3 = nn.LayerNorm(dim)
 
-        self.dropout = nn.Dropout(0.1)
+        self.dropout = nn.Dropout(drop_prob)
 
     def forward(self, x, enc_output, self_attn_mask, enc_dec_mask):
         attn_output = self.self_attn(q=x, k=x, v=x, mask=self_attn_mask) # "Masked Multi-Head Attention"
@@ -218,23 +218,21 @@ class DecoderLayer(nn.Module):
 
 
 class Decoder(nn.Module):
-    def __init__(
-        self, trg_vocab_size, trg_seq_len, trg_pad_idx, n_heads=N_HEADS, d_model=D_MODEL, n_layers=N_LAYERS
-    ):
+    def __init__(self, trg_vocab_size, trg_seq_len, trg_pad_idx, n_heads, dim, mlp_dim, n_layers):
         super().__init__()
 
         self.trg_vocab_size = trg_vocab_size
         self.trg_seq_len = trg_seq_len
         self.trg_pad_idx = trg_pad_idx
         self.n_heads = n_heads
-        self.d_model = d_model
+        self.dim = dim
         self.n_layers = n_layers
 
-        self.input = Input(vocab_size=trg_vocab_size, d_model=d_model, pad_idx=trg_pad_idx)
+        self.input = Input(vocab_size=trg_vocab_size, dim=dim, pad_idx=trg_pad_idx)
         self.dec_stack = nn.ModuleList(
-            [DecoderLayer(n_heads=n_heads, d_model=d_model, activ="relu") for _ in range(self.n_layers)]
+            [DecoderLayer(n_heads=n_heads, dim=dim, mlp_dim=mlp_dim, activ="relu") for _ in range(self.n_layers)]
         )
-        self.linear = nn.Linear(d_model, trg_vocab_size)
+        self.linear = nn.Linear(dim, trg_vocab_size)
         self.softmax = nn.Softmax(dim=-1)
 
     def forward(self, x, enc_output, self_attn_mask=None, enc_dec_mask=None):
@@ -259,7 +257,11 @@ class Transformer(nn.Module):
         src_seq_len,
         trg_seq_len,
         src_pad_idx,
-        trg_pad_idx
+        trg_pad_idx,
+        n_heads=N_HEADS,
+        dim=D_MODEL,
+        mlp_dim=D_MODEL * 4,
+        n_layers=N_LAYERS
     ):
         super().__init__()
 
@@ -274,10 +276,22 @@ class Transformer(nn.Module):
         self.trg_pad_idx = trg_pad_idx
 
         self.enc = Encoder(
-            src_vocab_size=src_vocab_size, src_seq_len=src_seq_len, src_pad_idx=src_pad_idx
+            src_vocab_size=src_vocab_size,
+            src_seq_len=src_seq_len,
+            src_pad_idx=src_pad_idx,
+            n_heads=n_heads,
+            dim=dim,
+            mlp_dim=mlp_dim,
+            n_layers=n_layers
         )
         self.dec = Decoder(
-            trg_vocab_size=trg_vocab_size, trg_seq_len=trg_seq_len, trg_pad_idx=trg_pad_idx
+            trg_vocab_size=trg_vocab_size,
+            trg_seq_len=trg_seq_len,
+            trg_pad_idx=trg_pad_idx,
+            n_heads=n_heads,
+            dim=dim,
+            mlp_dim=mlp_dim,
+            n_layers=n_layers
         )
 
         # "We share the same weight matrix between the two embedding layers

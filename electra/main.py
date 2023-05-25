@@ -13,7 +13,6 @@ def tie_weights(gen, disc):
     """
     gen.token_embed = disc.token_embed
     gen.pos_embed = disc.pos_embed
-    gen.seg_embed = disc.seg_embed
     # gen.electra.embeddings.token_type_embeddings = disc.electra.embeddings.token_type_embeddings
 
 VOCAB_SIZE = 30_522
