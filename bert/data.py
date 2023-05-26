@@ -88,6 +88,7 @@ class BERTDataset(Dataset):
         tokens = ["[CLS]"] + tokens1 + ["[SEP]"] + tokens2[: self.seq_len - len(tokens1) - 3] + ["[SEP]"]
         seg_ids = ([1] * (len(tokens1) + 2) + [2] * (len(tokens2) + 1))[: self.seq_len]
 
+        # 첫 번째 문장: 0, 두 번째 문장: 1, Pad: 0
         seg_ids.extend([self.pad_id] * (self.seq_len - len(seg_ids)))
 
         seg_ids = torch.as_tensor(seg_ids, dtype=torch.int64)

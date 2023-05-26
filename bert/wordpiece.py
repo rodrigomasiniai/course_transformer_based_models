@@ -8,6 +8,7 @@ from pathlib import Path
 from tqdm.auto import tqdm
 import json
 import argparse
+import re
 
 TOKENIZER = AutoTokenizer.from_pretrained("bert-base-cased")
 
@@ -144,6 +145,19 @@ def tokenize(text, vocab):
     pretokens = TOKENIZER._tokenizer.pre_tokenizer.pre_tokenize_str(text)
     encoded_words = [_encode_word(word=pretoken, vocab=vocab) for pretoken, _ in pretokens]
     return sum(encoded_words, [])
+
+
+def tokens_to_string(tokens):
+    text = ""
+    for token in tokens:
+        if token[: 2] == "##":
+            text += token[2:]
+        else:
+            text += " "
+            text += token
+    text = text[1:]
+    text = re.sub(pattern=r"\[CLS\]|\[SEP\]", repl="", string=text)
+    return text
 
 
 if __name__ == "__main__":

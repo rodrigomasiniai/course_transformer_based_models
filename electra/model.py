@@ -15,11 +15,25 @@ from bert.model import (
     TransformerBlock,
     get_pad_mask,
     MaskedLanguageModelHead,
-    NextSentencePredictionHead
+    # NextSentencePredictionHead
 )
 
 DROP_PROB = 0.1
 VOCAB_SIZE = 300
+
+
+class ReplacedTokenDetectionHead(nn.Module):
+    def __init__(self, vocab_size, hidden_dim=768):
+        super().__init__()
+
+        self.vocab_size = vocab_size
+        self.hidden_dim = hidden_dim
+
+        self.cls_proj = nn.Linear(hidden_dim, 2)
+
+    def forward(self, x):
+        x = self.cls_proj(x)
+        return x
 
 
 class ELECTRAModel(nn.Module):
@@ -46,7 +60,7 @@ class ELECTRAModel(nn.Module):
         self.tf_block = TransformerBlock(n_layers=n_layers, n_heads=n_heads, hidden_dim=hidden_dim, mlp_dim=mlp_dim)
 
         self.mlm_head = MaskedLanguageModelHead(vocab_size=vocab_size, hidden_dim=hidden_dim)
-        self.rtd_head = NextSentencePredictionHead(hidden_dim=hidden_dim)
+        self.rtd_head = ReplacedTokenDetectionHead(hidden_dim=hidden_dim)
 
     def forward(self, seq, seg_ids):
         x = self.token_embed(seq)
@@ -162,3 +176,20 @@ class ELECTRA(nn.Module):
     # gen_mlp_dim=1024,
     # embed_dim=1024,
     # mask_prob=0.25`
+
+# from transformers import AutoTokenizer
+
+# tokenizer = AutoTokenizer.from_pretrained('bert-base-uncased')
+
+# tokenizer(
+#     [
+#         # ["I love NLP!", "I don't like NLP..."],
+#         "I love NLP!",
+#         # ["There is an apple.", "I want to eat it."]
+#     ],
+#     max_length=30,
+#     padding="max_length",
+#     truncation=True,
+#     return_tensors="pt"
+# )
+# # [101,  1045,  2293, 17953,  2361,   999,   102,  1045,  2123,  1005, 1056,  2066, 17953,  2361,  1012,  1012,  1012,  102]

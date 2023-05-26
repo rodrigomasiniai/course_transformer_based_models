@@ -244,8 +244,15 @@ class Decoder(nn.Module):
         return x
 
 
-def get_pad_mask(seq, pad_idx=0):
+def _get_pad_mask(seq, pad_idx=0):
     mask = (seq == pad_idx).unsqueeze(2).unsqueeze(3)
+    return mask
+
+
+# "Prevent positions from attending to subsequent positions." in section 3.1 of the paper
+def _get_subsequent_info_mask(src_seq_len, trg_seq_len):
+    mask = torch.tril(torch.ones(size=(trg_seq_len, src_seq_len)), diagonal=0).bool()
+    mask = mask.unsqueeze(0).unsqueeze(3)
     return mask
 
 
@@ -299,16 +306,11 @@ class Transformer(nn.Module):
         self.dec.input.embed.weight = self.enc.input.embed.weight
         self.dec.linear.weight = self.dec.input.embed.weight
 
-    # "Prevent positions from attending to subsequent positions." in section 3.1 of the paper
-    def _get_subsequent_info_mask(self):
-        mask = torch.tril(torch.ones(size=(self.trg_seq_len, self.src_seq_len)), diagonal=0).bool()
-        mask = mask.unsqueeze(0).unsqueeze(3)
-        return mask
 
     def forward(self, src_seq, trg_seq):
-        src_pad_mask = get_pad_mask(seq=src_seq, pad_idx=self.src_pad_idx)
-        trg_pad_mask = get_pad_mask(seq=trg_seq, pad_idx=self.trg_pad_idx)
-        trg_subseq_mask = self._get_subsequent_info_mask()
+        src_pad_mask = _get_pad_mask(seq=src_seq, pad_idx=self.src_pad_idx)
+        trg_pad_mask = _get_pad_mask(seq=trg_seq, pad_idx=self.trg_pad_idx)
+        trg_subseq_mask = _get_subsequent_info_mask(src_seq_len=self.src_seq_len, trg_seq_len=self.trg_seq_len)
 
         enc_output = self.enc(src_seq, self_attn_mask=src_pad_mask)
         dec_output = self.dec(
