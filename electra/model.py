@@ -13,7 +13,7 @@ from bert.model import (
     SegmentEmbedding,
     PositionEmbedding,
     TransformerBlock,
-    get_pad_mask,
+    _get_pad_mask,
     MaskedLanguageModelHead,
     # NextSentencePredictionHead
 )
@@ -70,7 +70,7 @@ class ELECTRAModel(nn.Module):
         if self.hidden_dim != self.embed_dim:
             x = self.embed_proj(x)
 
-        pad_mask = get_pad_mask(seq=seq, pad_idx=self.pad_idx)
+        pad_mask = _get_pad_mask(seq=seq, pad_idx=self.pad_idx)
         x = self.tf_block(x, self_attn_mask=pad_mask)
         return x
 

@@ -3,9 +3,8 @@
 
 import torch
 import torch.nn as nn
-import random
 
-from transformer.model import PositionalEncoding, EncoderLayer, get_pad_mask
+from transformer.model import PositionalEncoding, EncoderLayer, _get_pad_mask
 
 DROP_PROB = 0.1
 
@@ -17,8 +16,7 @@ class TokenEmbedding(nn.Embedding):
 
 class SegmentEmbedding(nn.Embedding):
     def __init__(self, embed_dim, pad_idx=0):
-        # `num_embeddings=3`: `"[PAD]"` 토큰 때문!
-        super().__init__(num_embeddings=3, embedding_dim=embed_dim, padding_idx=pad_idx)
+        super().__init__(num_embeddings=2, embedding_dim=embed_dim, padding_idx=pad_idx)
 
 
 class PositionEmbedding(PositionalEncoding):
@@ -74,7 +72,7 @@ class BERT(nn.Module):
         self.seg_embed = SegmentEmbedding(embed_dim=hidden_dim, pad_idx=pad_idx)
         self.pos_embed = PositionEmbedding(embed_dim=hidden_dim)
 
-        self.dropout = nn.Dropout(DROP_PROB)
+        self.drop = nn.Dropout(DROP_PROB)
 
         self.tf_block = TransformerBlock(n_layers=n_layers, n_heads=n_heads, hidden_dim=hidden_dim, mlp_dim=mlp_dim)
 
@@ -82,11 +80,27 @@ class BERT(nn.Module):
         x = self.token_embed(seq)
         x = self.pos_embed(x)
         x += self.seg_embed(seg_ids)
-        x = self.dropout(x)
+        x = self.drop(x)
 
-        pad_mask = get_pad_mask(seq=seq, pad_idx=self.pad_idx)
+        pad_mask = _get_pad_mask(seq=seq, pad_idx=self.pad_idx)
         x = self.tf_block(x, self_attn_mask=pad_mask)
         return x
+
+
+class BERTBase(BERT):
+    def __init__(self, vocab_size, pad_idx=0):
+        super().__init__(vocab_size=vocab_size, pad_idx=pad_idx)
+
+
+class BERTLarge(BERT):
+    def __init__(self, vocab_size, pad_idx=0):
+        super().__init__(
+            vocab_size=vocab_size,
+            n_layers=24,
+            n_heads=16,
+            hidden_dim=1024,
+            pad_idx=pad_idx
+        )
 
 
 class ClassificationHead(nn.Module):
@@ -139,9 +153,11 @@ if __name__ == "__main__":
     BATCH_SIZE = 8
     SEQ_LEN = 512
     seq = torch.randint(low=0, high=VOCAB_SIZE, size=(BATCH_SIZE, SEQ_LEN))
-    sent1_len = random.randint(0, SEQ_LEN - 1)
-    seg_ids = torch.as_tensor([0] + [1] * (sent1_len - 1) + [0] + [2] * (SEQ_LEN - sent1_len - 1))
+    sent1_len = torch.randint(low=2, high=SEQ_LEN + 1, size=(BATCH_SIZE,))
+    seg_ids = torch.as_tensor([[0] * i + [1] * (SEQ_LEN - i) for i in sent1_len], dtype=torch.int64)
 
-    bert = BERT(vocab_size=VOCAB_SIZE)
-    output = bert(seq=seq, seg_ids=seg_ids)
+    model = BERT(vocab_size=VOCAB_SIZE)
+    # model = BERTBase(vocab_size=VOCAB_SIZE)
+    # model = BERTLarge(vocab_size=VOCAB_SIZE)
+    output = model(seq=seq, seg_ids=seg_ids)
     print(output.shape)
