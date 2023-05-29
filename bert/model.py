@@ -156,8 +156,7 @@ if __name__ == "__main__":
     sent1_len = torch.randint(low=2, high=SEQ_LEN + 1, size=(BATCH_SIZE,))
     seg_ids = torch.as_tensor([[0] * i + [1] * (SEQ_LEN - i) for i in sent1_len], dtype=torch.int64)
 
-    model = BERT(vocab_size=VOCAB_SIZE)
-    # model = BERTBase(vocab_size=VOCAB_SIZE)
+    model = BERTBase(vocab_size=VOCAB_SIZE)
     # model = BERTLarge(vocab_size=VOCAB_SIZE)
     output = model(seq=seq, seg_ids=seg_ids)
     print(output.shape)

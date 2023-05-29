@@ -112,7 +112,7 @@ class BERTDataset(Dataset):
 
 if __name__ == "__main__":
     vocab_path = "/Users/jongbeomkim/Desktop/workspace/transformer_based_models/bert/vocab.json"
-    corpus_dir = "/Users/jongbeomkim/Documents/datasets/bookscorpus_subset"
+    corpus_dir = "/Users/jongbeomkim/Documents/datasets/bookcorpus_subset"
 
     SEQ_LEN = 512
     BATCH_SIZE = 8

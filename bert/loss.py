@@ -1,9 +1,6 @@
-import torch
 import torch.nn as nn
 import torch.nn.functional as F
-from torch.utils.data import Dataset, DataLoader
-import random
-import json
+from torch.utils.data import DataLoader
 
 from bert.model import BERT, MaskedLanguageModelHead, NextSentencePredictionHead
 from bert.data import BERTDataset
@@ -34,7 +31,7 @@ if __name__ == "__main__":
     criterion = BERTLoss()
 
     vocab_path = "/Users/jongbeomkim/Desktop/workspace/transformer_based_models/bert/vocab.json"
-    corpus_dir = "/Users/jongbeomkim/Documents/datasets/bookscorpus_subset"
+    corpus_dir = "/Users/jongbeomkim/Documents/datasets/bookcorpus_subset"
 
     SEQ_LEN = 512
     # BATCH_SIZE = 256
