@@ -48,8 +48,6 @@ class TransformerBlock(nn.Module):
 
 
 class BERT(nn.Module):
-    # BERT-BASE: `n_layer=12, hidden_dim=768, n_heads=12`, 110M parameters
-    # BERT-LARGE: `n_layer=24, hidden_dim=1024, n_heads=16`, 340M parameters
     def __init__(
         self,
         vocab_size,
@@ -87,11 +85,13 @@ class BERT(nn.Module):
         return x
 
 
+# 110M parameters
 class BERTBase(BERT):
     def __init__(self, vocab_size, pad_idx=0):
         super().__init__(vocab_size=vocab_size, pad_idx=pad_idx)
 
 
+# 340M parameters
 class BERTLarge(BERT):
     def __init__(self, vocab_size, pad_idx=0):
         super().__init__(
