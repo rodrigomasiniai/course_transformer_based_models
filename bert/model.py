@@ -35,7 +35,9 @@ class TransformerBlock(nn.Module):
 
         self.enc_stack = nn.ModuleList(
             [
-                EncoderLayer(n_heads=n_heads, dim=hidden_dim, mlp_dim=mlp_dim, activ="gelu", drop_prob=DROP_PROB)
+                EncoderLayer(
+                    n_heads=n_heads, dim=hidden_dim, mlp_dim=mlp_dim, activ="gelu", drop_prob=DROP_PROB
+                )
                 for _
                 in range(n_layers)
             ]
@@ -56,7 +58,7 @@ class BERT(nn.Module):
         hidden_dim=768,
         mlp_dim=768 * 4,
         pad_idx=0,
-        DROP_PROB=DROP_PROB
+        drop_prob=DROP_PROB
     ):
         super().__init__()
 
@@ -70,7 +72,7 @@ class BERT(nn.Module):
         self.seg_embed = SegmentEmbedding(embed_dim=hidden_dim, pad_idx=pad_idx)
         self.pos_embed = PositionEmbedding(embed_dim=hidden_dim)
 
-        self.drop = nn.Dropout(DROP_PROB)
+        self.drop = nn.Dropout(drop_prob)
 
         self.tf_block = TransformerBlock(n_layers=n_layers, n_heads=n_heads, hidden_dim=hidden_dim, mlp_dim=mlp_dim)
 
@@ -119,30 +121,34 @@ class ClassificationHead(nn.Module):
 
 
 class MaskedLanguageModelHead(nn.Module):
-    def __init__(self, vocab_size, hidden_dim=768):
+    def __init__(self, vocab_size, hidden_dim=768, drop_prob=DROP_PROB):
         super().__init__()
 
         self.vocab_size = vocab_size
         self.hidden_dim = hidden_dim
 
         self.cls_proj = nn.Linear(hidden_dim, vocab_size)
+        self.drop = nn.Dropout(drop_prob)
 
     def forward(self, x):
         x = self.cls_proj(x)
+        x = self.drop(x)
         return x
 
 
 class NextSentencePredictionHead(nn.Module):
-    def __init__(self, hidden_dim=768):
+    def __init__(self, hidden_dim=768, drop_prob=DROP_PROB):
         super().__init__()
 
         self.hidden_dim = hidden_dim
 
         self.cls_proj = nn.Linear(hidden_dim, 2)
+        self.drop = nn.Dropout(drop_prob)
 
     def forward(self, x):
         x = x[:, 0, :]
         x = self.cls_proj(x)
+        x = self.drop(x)
         return x
 
 

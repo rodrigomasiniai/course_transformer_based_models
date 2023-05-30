@@ -5,6 +5,7 @@
 
 import torch
 import torch.nn as nn
+import torch.nn.functional as F
 from einops import rearrange
 from typing import Literal
 
@@ -68,18 +69,18 @@ class MultiHeadAttention(nn.Module):
         self.head_dim = dim // n_heads # $d_{k}$, $d_{v}$
 
         self.q_proj = nn.Linear(dim, dim, bias=False) # $W^{Q}_{i}$
-        self.w_proj = nn.Linear(dim, dim, bias=False) # $W^{K}_{i}$
-        self.w_proj = nn.Linear(dim, dim, bias=False) # $W^{V}_{i}$
+        self.k_proj = nn.Linear(dim, dim, bias=False) # $W^{K}_{i}$
+        self.v_proj = nn.Linear(dim, dim, bias=False) # $W^{V}_{i}$
 
-        self.softmax = nn.Softmax(dim=2)
+        # self.softmax = nn.Softmax(dim=2)
         self.dropout = nn.Dropout(drop_prob)
-        self.output_proj = nn.Linear(dim, dim, bias=False) # $W^{O}$
+        self.out_proj = nn.Linear(dim, dim, bias=False) # $W^{O}$
 
     def forward(self, q, k, v, mask=None):
         b, l, _ = q.shape
         _, m, _ = k.shape
 
-        q, k, v = self.q_proj(q), self.w_proj(k), self.w_proj(v)
+        q, k, v = self.q_proj(q), self.k_proj(k), self.v_proj(v)
         q = q.view(b, l, self.head_dim, self.n_heads)
         k = k.view(b, m, self.head_dim, self.n_heads)
         v = v.view(b, m, self.head_dim, self.n_heads)
@@ -89,13 +90,14 @@ class MultiHeadAttention(nn.Module):
             attn_score.masked_fill_(mask=mask, value=-1e9) # "Mask (opt.)"
         attn_score /= (self.head_dim ** 0.5) # "Scale"
 
-        attn_weight = self.softmax(attn_score) # "Softmax"
+        # attn_weight = self.softmax(attn_score) # "Softmax"
+        attn_weight = F.softmax(attn_score, dim=2) # "Softmax"
         attn_weight = self.dropout(attn_weight) # Not in the paper
 
         x = torch.einsum("blmn,bmdn->bldn", attn_weight, k) # "MatMul"
         x = rearrange(x, pattern="b l d n -> b l (d n)")
 
-        x = self.output_proj(x)
+        x = self.out_proj(x)
         return x
 
 
@@ -233,14 +235,15 @@ class Decoder(nn.Module):
             [DecoderLayer(n_heads=n_heads, dim=dim, mlp_dim=mlp_dim, activ="relu") for _ in range(self.n_layers)]
         )
         self.linear = nn.Linear(dim, trg_vocab_size)
-        self.softmax = nn.Softmax(dim=-1)
+        # self.softmax = nn.Softmax(dim=-1)
 
     def forward(self, x, enc_output, self_attn_mask=None, enc_dec_mask=None):
         x = self.input(x)
         for dec_layer in self.dec_stack:
             x = dec_layer(x, enc_output=enc_output, self_attn_mask=self_attn_mask, enc_dec_mask=enc_dec_mask)
         x = self.linear(x)
-        x = self.softmax(x)
+        # x = self.softmax(x)
+        x = F.softmax(x, dim=-1)
         return x
 
 

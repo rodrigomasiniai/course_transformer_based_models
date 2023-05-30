@@ -7,11 +7,11 @@ from typing import Literal
 from bert.model import BERTBase
 
 
-def _perform_sentence_bert_pooling(x, pooling):
-    if pooling == "mean":
+def _perform_sentence_bert_pooler(x, pooler):
+    if pooler == "mean":
         x = x[:, 1: -1, :]
         x = torch.max(x, dim=1)[0]
-    elif pooling == "mean":
+    elif pooler == "mean":
         x = x[:, 1: -1, :]
         x = torch.mean(x, dim=1)
     else:
@@ -20,11 +20,11 @@ def _perform_sentence_bert_pooling(x, pooling):
 
 
 class SentenceBERTForClassification(nn.Module):
-    def __init__(self, embedder, pooling: Literal["mean", "max", "cls"]="mean"):
+    def __init__(self, embedder, pooler: Literal["mean", "max", "cls"]="mean"):
         super().__init__()
 
         self.embedder = embedder
-        self.pooling = pooling
+        self.pooler = pooler
 
         self.proj = nn.Linear(embedder.hidden_dim * 3, 3) # $W_{t}$ in the paper.
         self.softmax = nn.Softmax(dim=1)
@@ -35,8 +35,8 @@ class SentenceBERTForClassification(nn.Module):
             self.embedder(sent2, seg_ids=torch.zeros_like(sent2))
         )
         x1, x2 = (
-            _perform_sentence_bert_pooling(x1, pooling=self.pooling),
-            _perform_sentence_bert_pooling(x2, pooling=self.pooling)
+            _perform_sentence_bert_pooler(x1, pooler=self.pooler),
+            _perform_sentence_bert_pooler(x2, pooler=self.pooler)
         )
         x = torch.cat([x1, x2, torch.abs(x1 - x2)], dim=1)
         x = self.proj(x)
@@ -48,11 +48,11 @@ class SentenceBERTForClassification(nn.Module):
 
 
 class SentenceBERTForRegression(nn.Module):
-    def __init__(self, embedder, pooling: Literal["mean", "max", "cls"]="mean"):
+    def __init__(self, embedder, pooler: Literal["mean", "max", "cls"]="mean"):
         super().__init__()
 
         self.embedder = embedder
-        self.pooling = pooling
+        self.pooler = pooler
 
     def forward(self, sent1, sent2):
         x1, x2 = (
@@ -60,8 +60,8 @@ class SentenceBERTForRegression(nn.Module):
             self.embedder(sent2, seg_ids=torch.zeros_like(sent2))
         )
         x1, x2 = (
-            _perform_sentence_bert_pooling(x1, pooling=self.pooling),
-            _perform_sentence_bert_pooling(x2, pooling=self.pooling)
+            _perform_sentence_bert_pooler(x1, pooler=self.pooler),
+            _perform_sentence_bert_pooler(x2, pooler=self.pooler)
         )
         x = F.cosine_similarity(x1, x2)
         return x
@@ -71,11 +71,11 @@ class SentenceBERTForRegression(nn.Module):
 
 
 class SentenceBERTWithTripletNetworks(nn.Module):
-    def __init__(self, embedder, pooling: Literal["mean", "max", "cls"]="mean", eps=1):
+    def __init__(self, embedder, pooler: Literal["mean", "max", "cls"]="mean", eps=1):
         super().__init__()
 
         self.embedder = embedder
-        self.pooling = pooling
+        self.pooler = pooler
         self.eps = eps
 
     def forward(self, a, p, n):
@@ -85,9 +85,9 @@ class SentenceBERTWithTripletNetworks(nn.Module):
             self.embedder(n, seg_ids=torch.zeros_like(n))
         )
         a, p, n = (
-            _perform_sentence_bert_pooling(a, pooling=self.pooling),
-            _perform_sentence_bert_pooling(p, pooling=self.pooling),
-            _perform_sentence_bert_pooling(n, pooling=self.pooling)
+            _perform_sentence_bert_pooler(a, pooler=self.pooler),
+            _perform_sentence_bert_pooler(p, pooler=self.pooler),
+            _perform_sentence_bert_pooler(n, pooler=self.pooler)
         )
         x = LA.vector_norm(a - p, ord=2, dim=1) - LA.vector_norm(a - n, ord=2, dim=1) + self.eps
         x = F.relu(x)
