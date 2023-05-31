@@ -1,3 +1,6 @@
+# References
+    # http://ixa2.si.ehu.eus/stswiki/index.php/STSbenchmark
+
 import torch
 from torch.utils.data import Dataset, DataLoader
 from transformers import AutoTokenizer
@@ -51,33 +54,38 @@ class STSbenchmarkDataset(Dataset):
         return (x != 0).sum(dim=1)
 
 
-def _truncate_to_max_length(batch, tokenizer):
-    scores, sents1, sents2 = list(), list(), list()
-    for score, sent1, sent2 in batch:
-        scores.append(score)
-        sents1.append(sent1)
-        sents2.append(sent2)
+class STSbenchmarkCollator(object):
+    def __init__(self, tokenizer):
+        self.tokenizer = tokenizer
+    
+    def __call__(self, batch):
+        scores, sents1, sents2 = list(), list(), list()
+        for score, sent1, sent2 in batch:
+            scores.append(score)
+            sents1.append(sent1)
+            sents2.append(sent2)
 
-    scores, sents1, sents2 = torch.as_tensor(scores), torch.stack(sents1), torch.stack(sents2)
-    # "and are only padded to the longest element in a mini-batch. This drastically reduces
-    # computational overhead from padding tokens."
-    sents1, sents2 = (
-        sents1[:, : (sents1 != tokenizer.pad_token_id).sum(dim=1).max()],
-        sents2[:, : (sents2 != tokenizer.pad_token_id).sum(dim=1).max()]
-    )
-    return scores, sents1, sents2
+        scores, sents1, sents2 = torch.as_tensor(scores), torch.stack(sents1), torch.stack(sents2)
+        # "(Sentences with similar lengths) are only padded to the longest element in a mini-batch.
+        # This drastically reduces computational overhead from padding tokens."
+        sents1, sents2 = (
+            sents1[:, : (sents1 != self.tokenizer.pad_token_id).sum(dim=1).max()],
+            sents2[:, : (sents2 != self.tokenizer.pad_token_id).sum(dim=1).max()]
+        )
+        return scores, sents1, sents2
 
 
 if __name__ == "__main__":
     csv_path = "/Users/jongbeomkim/Documents/datasets/stsbenchmark/sts-train.csv"
     tokenizer = AutoTokenizer.from_pretrained("bert-base-cased")
     stsb_ds = STSbenchmarkDataset(csv_path=csv_path, tokenizer=tokenizer)
+    stsb_collator = STSbenchmarkCollator(tokenizer=tokenizer)
     stsb_dl = DataLoader(
         stsb_ds,
         batch_size=8,
         shuffle=False,
         drop_last=True,
-        collate_fn=_truncate_to_max_length(tokenizer=tokenizer)
+        collate_fn=stsb_collator
     )
     for batch, (score, sent1, sent2) in enumerate(stsb_dl, start=1):
         print(sent1.shape, sent2.shape)
