@@ -30,20 +30,20 @@ class STSbenchmarkDataset(Dataset):
                 sents1.append(sent1)
                 sents2.append(sent2)
                 
-        self.ids1 = torch.as_tensor(tokenizer(sents1, padding="max_length", max_length=max_len)["input_ids"])
-        self.ids2 = torch.as_tensor(tokenizer(sents2, padding="max_length", max_length=max_len)["input_ids"])
+        self.seq1 = torch.as_tensor(tokenizer(sents1, padding="max_length", max_length=max_len)["input_ids"])
+        self.seq2 = torch.as_tensor(tokenizer(sents2, padding="max_length", max_length=max_len)["input_ids"])
 
         # "We implemented a smart batching strategy: Sentences with similar lengths are grouped together"
         # in the section 7 of the paper.
-        order = torch.argsort(self._get_length(self.ids1) + self._get_length(self.ids1))
-        self.ids1 = self.ids1[order]
-        self.ids2 = self.ids2[order]
+        order = torch.argsort(self._get_length(self.seq1) + self._get_length(self.seq1))
+        self.seq1 = self.seq1[order]
+        self.seq2 = self.seq2[order]
 
     def __len__(self):
         return len(self.scores)
 
     def __getitem__(self, idx):
-        return self.scores[idx], self.ids1[idx], self.ids2[idx]
+        return self.scores[idx], self.seq1[idx], self.seq2[idx]
 
     def _normalize_score(self, score):
         score -= 2.5

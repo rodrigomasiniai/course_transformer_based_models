@@ -1,176 +1,87 @@
 # References
-    # https://huggingface.co/learn/nlp-course/chapter6/6?fw=pt
-    # https://github.com/codertimo/BERT-pytorch/blob/master/bert_pytorch/dataset/vocab.py
+    # https://huggingface.co/transformers/v3.1.0/_modules/transformers/tokenization_bert.html
+    # https://blog.naver.com/PostView.naver?blogId=sooftware&logNo=222494375953&parentCategoryNo=&categoryNo=13&viewDate=&isShowPopularPosts=false&from=postView
+    # https://velog.io/@nawnoes/Huggingface-tokenizers%EB%A5%BC-%EC%82%AC%EC%9A%A9%ED%95%9C-Wordpiece-Tokenizer-%EB%A7%8C%EB%93%A4%EA%B8%B0
+    # https://cryptosalamander.tistory.com/139
 
-from transformers import AutoTokenizer
-from collections import defaultdict
+
+from tokenizers import BertWordPieceTokenizer
+# from transformers import PreTrainedTokenizerFast
+# from transformers import AutoTokenizer
+from transformers import BertTokenizer
+
+vocab_path = "../data/wpm-vocab-all.txt"
+
+tokenizer = BertTokenizer(vocab_file=vocab_path, do_lower_case=False)
 from pathlib import Path
-from tqdm.auto import tqdm
-import json
-import argparse
-import re
+import json # import json module
 
-TOKENIZER = AutoTokenizer.from_pretrained("bert-base-cased")
+VOCAB_SIZE = 3000
 
 
-def collect_corpus(corpus_dir, add_empty_string=False):
-    corpus_dir = Path(corpus_dir)
+# def train_wordpiece_tokenizer(data_files, vocab_size, save_dir):
+#     save_dir = Path(save_dir)
 
-    corpus = list()
-    for corpus_path in tqdm(list(corpus_dir.glob("**/*.txt"))):
-        with open(corpus_path, mode="r", encoding="utf-8") as f:
-            for line in f:
-                if line == "\n":
-                    continue
-                line = line.replace("\n", "").replace("\t", "")
+#     tokenizer = BertWordPieceTokenizer(
+#         clean_text=True, # hether to clean the text before tokenization by removing any control characters
+#             # and replacing all whitespaces by the classic one.
+#         handle_chinese_chars=True, # Whether to tokenize Chinese characters.
+#             # This should likely be deactivated for Japanese:
+#         strip_accents=False, # Must be False if cased model / 액센트 제거
+#         lowercase=False, # Whether to lowercase the input when tokenizing.
+#         wordpieces_prefix="##" # The prefix for subwords.
+#     )
+#     tokenizer.train(
+#         files=data_files,
+#         limit_alphabet=0, # The maximum different characters to keep in the alphabet.
+#         vocab_size=vocab_size
+#     )
 
-                corpus.append(line)
-    if add_empty_string:
-        corpus.append("")
-    return corpus
+#     json_path = save_dir/f"tokenizer.json"
+#     tokenizer.save(str(json_path))
 
+#     tokenizer = PreTrainedTokenizerFast(tokenizer_file=str(json_path))
+#     tokenizer.save_pretrained(save_dir)
 
-def get_pretoken_frequencies(corpus):
-    freqs = defaultdict(int)
-    for text in tqdm(corpus):
-        pretokens = TOKENIZER.backend_tokenizer.pre_tokenizer.pre_tokenize_str(text)
-        for pretoken, _ in pretokens:
-            freqs[pretoken] += 1
-    return freqs
-
-
-def get_character_level_vocabulary(pretokens):
-    vocab = list()
-    for word in pretokens:
-        if word[0] not in vocab:
-            vocab.append(word[0])
-        for letter in word[1:]:
-            letter
-            if f"##{letter}" not in vocab:
-                vocab.append(f"##{letter}")
-    vocab.sort()
-    vocab = ["[PAD]", "[UNK]", "[CLS]", "[SEP]", "[MASK]"] + vocab.copy()
-
-    vocab = {char: i for i, char in enumerate(vocab)}
-    return vocab
+#     tokenizer = AutoTokenizer.from_pretrained(save_dir)
+#     return tokenizer
 
 
-def split_pretokens(pretokens):
-    splits = {
-        pretoken: [char if id_ == 0 else f"##{char}" for id_, char in enumerate(pretoken)]
-        for pretoken in pretokens
-    }
-    return splits
+def train_wordpiece_tokenizer(data_files, vocab_size, json_path):
+    tokenizer = BertWordPieceTokenizer(
+        clean_text=True, # hether to clean the text before tokenization by removing any control characters
+            # and replacing all whitespaces by the classic one.
+        handle_chinese_chars=True, # Whether to tokenize Chinese characters.
+            # This should likely be deactivated for Japanese:
+        strip_accents=False, # Must be False if cased model / 액센트 제거
+        lowercase=False, # Whether to lowercase the input when tokenizing.
+        wordpieces_prefix="##" # The prefix for subwords.
+    )
+    tokenizer.train(
+        files=data_files,
+        limit_alphabet=0, # The maximum different characters to keep in the alphabet.
+        vocab_size=vocab_size
+    )
+    tokenizer.save(str(json_path))
 
 
-def _merge_pair(a, b, splits):
-    for pretoken in splits:
-        split = splits[pretoken]
-        if len(split) == 1:
-            continue
-        i = 0
-        while i < len(split) - 1:
-            if split[i] == a and split[i + 1] == b:
-                merge = a + b[2:] if b.startswith("##") else a + b
-                split = split[:i] + [merge] + split[i + 2 :]
-            else:
-                i += 1
-        splits[pretoken] = split
-    return splits
+def json_to_txt_for_vocab(json_path):
+    txt_path = f"""{json_path.rsplit(".", 1)[0]}.txt"""
+    with open(txt_path, mode="w",encoding="utf-8") as txt_file:
+        with open(json_path) as json_file:
+            json_data = json.load(json_file)
+            for item in json_data["model"]["vocab"].keys():
+                txt_file.write(item+"\n")
+            txt_file.close()
+
+data_files=["/Users/jongbeomkim/Documents/datasets/wikisection_dataset_json/wikisection_en_city_test.json"]
+json_path="/Users/jongbeomkim/Downloads/wp.json"
+tokenizer = train_wordpiece_tokenizer(data_files=data_files, vocab_size=VOCAB_SIZE, vocab_path=json_path)
+json_to_txt_for_vocab(json_path)
+tokenizer = BertTokenizer(vocab_file="/Users/jongbeomkim/Downloads/wp.txt", do_lower_case=False)
+
+tokenizer.encode("문장", add_special_tokens=False)
 
 
-def _compute_pair_scores(freqs, splits):
-    letter_freqs = defaultdict(int)
-    pair_freqs = defaultdict(int)
-    for word, freq in freqs.items():
-        split = splits[word]
-        if len(split) == 1:
-            letter_freqs[split[0]] += freq
-            continue
-        for i in range(len(split) - 1):
-            pair = (split[i], split[i + 1])
-            letter_freqs[split[i]] += freq
-            pair_freqs[pair] += freq
-        letter_freqs[split[-1]] += freq
 
-    scores = {
-        pair: freq / (letter_freqs[pair[0]] * letter_freqs[pair[1]])
-        for pair, freq in pair_freqs.items()
-    }
-    return scores
-
-
-def build_vocab(freqs, splits, vocab_size):
-    vocab = get_character_level_vocabulary(pretokens=freqs.keys())
-    if len(vocab) >= vocab_size:
-        return vocab
-
-    with tqdm(total=vocab_size - len(vocab)) as pbar:
-        while len(vocab) < vocab_size:
-            scores = _compute_pair_scores(freqs=freqs, splits=splits)
-            best_pair, max_score = "", None
-            for pair, score in scores.items():
-                if max_score is None or score > max_score:
-                    best_pair = pair
-                    max_score = score
-            splits = _merge_pair(*best_pair, splits)
-            new_token = (
-                best_pair[0] + best_pair[1][2:]
-                if best_pair[1].startswith("##")
-                else best_pair[0] + best_pair[1]
-            )
-            vocab[new_token] = len(vocab)
-
-            pbar.update(1)
-    return vocab
-
-
-def _encode_word(word, vocab):
-    tokens = list()
-    while len(word) > 0:
-        i = len(word)
-        while i > 0 and word[: i] not in vocab:
-            i -= 1
-        if i == 0:
-            return ["[UNK]"]
-        tokens.append(word[: i])
-
-        word = word[i:]
-        if len(word) > 0:
-            word = f"##{word}"
-    return tokens
-
-
-def tokenize(text, vocab):
-    pretokens = TOKENIZER._tokenizer.pre_tokenizer.pre_tokenize_str(text)
-    encoded_words = [_encode_word(word=pretoken, vocab=vocab) for pretoken, _ in pretokens]
-    return sum(encoded_words, [])
-
-
-def tokens_to_string(tokens):
-    text = ""
-    for token in tokens:
-        if token[: 2] == "##":
-            text += token[2:]
-        else:
-            text += " "
-            text += token
-    text = text[1:]
-    text = re.sub(pattern=r"\[CLS\]|\[SEP\]", repl="", string=text)
-    return text
-
-
-if __name__ == "__main__":
-    parser = argparse.ArgumentParser()
-    parser.add_argument("--corpus_dir")
-    args = parser.parse_args()
-
-    corpus = collect_corpus(args.corpus_dir)
-
-    freqs = get_pretoken_frequencies(corpus)
-    splits = split_pretokens(pretokens=freqs.keys())
-    vocab = build_vocab(freqs=freqs, splits=splits, vocab_size=1200)
-
-    json_path = "vocab.json"
-    with open(json_path, mode="w") as f:
-        json.dump(vocab, f)
+tokenizer.tokenize("튜닙은 자연어처리 테크 스타트업이다.")

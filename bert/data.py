@@ -7,7 +7,7 @@ from torch.utils.data import Dataset, DataLoader
 import random
 import json
 
-from bert.wordpiece import collect_corpus, tokenize
+from bert.wordpiece_implementation import collect_corpus, tokenize
 from bert.model import BERT
 
 
@@ -20,6 +20,7 @@ class BERTDataset(Dataset):
         with open(vocab_path, mode="r") as f:
             self.vocab = json.load(f)
         self.vocab_size = len(self.vocab)
+
         self.pad_id = self.vocab["[PAD]"]
         self.unk_id = self.vocab["[UNK]"]
         self.cls_id = self.vocab["[CLS]"]
