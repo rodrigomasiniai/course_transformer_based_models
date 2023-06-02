@@ -1,21 +1,26 @@
 # References
     # https://github.com/codertimo/BERT-pytorch/blob/master/bert_pytorch/dataset/dataset.py
+    # # https://d2l.ai/chapter_natural-language-processing-pretraining/bert-dataset.html#sec-bert-dataset
+    # https://nn.labml.ai/transformers/mlm/index.html
 
 import torch
 import torch.nn.functional as F
 from torch.utils.data import Dataset, DataLoader
 import random
 import json
+from pathlib import Path
+from tqdm.auto import tqdm
 
-from bert.wordpiece_implementation import collect_corpus, tokenize
-from bert.model import BERT
+# from bert.wordpiece_implementation import collect_corpus, tokenize
+from bert.tokenize import prepare_bert_tokenizer
+from bert.model import BERTBase
 
 
-class BERTDataset(Dataset):
-    def __init__(self, vocab_path, corpus_dir, seq_len):
+class BookCorpusForBERT(Dataset):
+    def __init__(self, vocab_path, data_dir, max_len):
         self.vocab_path = vocab_path
-        self.corpus_dir = corpus_dir
-        self.seq_len = seq_len
+        self.data_dir = data_dir
+        self.max_len = max_len
 
         with open(vocab_path, mode="r") as f:
             self.vocab = json.load(f)
@@ -29,12 +34,12 @@ class BERTDataset(Dataset):
 
         self.id_to_token = {v:k for k, v in self.vocab.items()}
 
-        self.corpus = collect_corpus(corpus_dir=corpus_dir, add_empty_string=True)
+        self.corpus = collect_corpus(data_dir=data_dir, add_empty_string=True)
       
     def _mask_some_tokens(self, tokens):
         gt_tokens, replaced_tokens, target_ids = list(), list(), list()
         for id_, token in enumerate(tokens):
-            if id_ >= self.seq_len:
+            if id_ >= self.max_len:
                 continue
             id_ = self.vocab.get(token, self.unk_id)
             gt_tokens.append(id_)
@@ -57,9 +62,9 @@ class BERTDataset(Dataset):
             replaced_tokens.append(id_)
 
         # Pad.
-        gt_tokens.extend([self.pad_id] * (self.seq_len - len(gt_tokens)))
-        replaced_tokens.extend([self.pad_id] * (self.seq_len - len(replaced_tokens)))
-        target_ids.extend([self.pad_id] * (self.seq_len - len(target_ids)))
+        gt_tokens.extend([self.pad_id] * (self.max_len - len(gt_tokens)))
+        replaced_tokens.extend([self.pad_id] * (self.max_len - len(replaced_tokens)))
+        target_ids.extend([self.pad_id] * (self.max_len - len(target_ids)))
 
         gt_tokens = torch.as_tensor(gt_tokens, dtype=torch.int64)
         replaced_tokens = torch.as_tensor(replaced_tokens, dtype=torch.int64)
@@ -86,11 +91,11 @@ class BERTDataset(Dataset):
         tokens2 = tokenize(text=sent2, vocab=self.vocab)
 
         # Truncate.
-        tokens = ["[CLS]"] + tokens1 + ["[SEP]"] + tokens2[: self.seq_len - len(tokens1) - 3] + ["[SEP]"]
-        seg_ids = ([1] * (len(tokens1) + 2) + [2] * (len(tokens2) + 1))[: self.seq_len]
+        tokens = ["[CLS]"] + tokens1 + ["[SEP]"] + tokens2[: self.max_len - len(tokens1) - 3] + ["[SEP]"]
+        seg_ids = ([1] * (len(tokens1) + 2) + [2] * (len(tokens2) + 1))[: self.max_len]
 
         # 첫 번째 문장: 0, 두 번째 문장: 1, Pad: 0
-        seg_ids.extend([self.pad_id] * (self.seq_len - len(seg_ids)))
+        seg_ids.extend([self.pad_id] * (self.max_len - len(seg_ids)))
 
         seg_ids = torch.as_tensor(seg_ids, dtype=torch.int64)
         is_next = torch.as_tensor(is_next, dtype=torch.int64)
@@ -109,21 +114,3 @@ class BERTDataset(Dataset):
         output["is_next"] = is_next
         output["segment_indices"] = seg_ids
         return output
- 
-
-if __name__ == "__main__":
-    vocab_path = "/Users/jongbeomkim/Desktop/workspace/transformer_based_models/bert/vocab.json"
-    corpus_dir = "/Users/jongbeomkim/Documents/datasets/bookcorpus_subset"
-
-    SEQ_LEN = 512
-    BATCH_SIZE = 8
-    ds = BERTDataset(vocab_path=vocab_path, corpus_dir=corpus_dir, seq_len=SEQ_LEN)
-    dl = DataLoader(dataset=ds, batch_size=BATCH_SIZE, shuffle=True, drop_last=True)
-    for batch, data in enumerate(dl, start=1):
-        print(
-            data["gt_tokens"].shape,
-            data["replaced_tokens"].shape,
-            data["target_ids"].shape,
-            data["segment_indices"].shape,
-            data["is_next"].shape
-        )

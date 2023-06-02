@@ -17,26 +17,6 @@ np.set_printoptions(suppress=True, linewidth=sys.maxsize, threshold=sys.maxsize)
 torch.set_printoptions(edgeitems=10, sci_mode=True)
 
 
-mode="doc_sentences"
-data = list()
-text = [corpus[0]["text"]]
-ids = [corpus[0]["ids"]]
-for id_ in range(1, len(corpus)):
-    if corpus[id_ - 1]["document"] != corpus[id_]["document"]:
-        data.append({"text": text, "ids": ids})
-
-        text = [corpus[id_]["text"]]
-        ids = [corpus[id_]["ids"]]
-
-    cur_len = sum([len(i) for i in ids])
-    if cur_len + len(corpus[id_]["ids"]) <= max_len - 2:
-        text.append(corpus[id_]["text"])
-        ids.append(corpus[id_]["ids"])
-data[0]["text"]
-for k in range(100):
-    sum([len(i) for i in data[k]["ids"]])
-
-
 class BookCorpusForRoBERTa(Dataset):
     def __init__(
         self,
@@ -67,29 +47,6 @@ class BookCorpusForRoBERTa(Dataset):
                 ids = tokenizer.encode(para).ids
                 corpus.append({"document": str(doc_path), "text": para, "ids": ids})
         return corpus
-
-    def _prepare_nsp_data(self, corpus):
-        nsp_data = list()
-        for id1 in range(len(corpus) - 1):
-            seg1 = corpus[id1]["text"]
-            seg1_ids = corpus[id1]["ids"]
-            if random.random() < 0.5:
-                seg2 = corpus[id1 + 1]["text"]
-                seg2_ids = corpus[id1 + 1]["ids"]
-                is_next = True
-            else:
-                id2 = random.randrange(len(corpus))
-                seg2 = corpus[id2]["text"]
-                seg2_ids = corpus[id2]["ids"]
-                is_next = False
-            nsp_data.append({
-                "segment1": seg1,
-                "segment2": seg2,
-                "segment1_ids": seg1_ids,
-                "segment2_ids": seg2_ids,
-                "is_next": is_next,
-            })
-        return nsp_data
 
     def __len__(self):
         return len(self.corpus)
