@@ -3,6 +3,7 @@
     # # https://d2l.ai/chapter_natural-language-processing-pretraining/bert-dataset.html#sec-bert-dataset
     # https://nn.labml.ai/transformers/mlm/index.html
 
+import sys
 import torch
 import torch.nn.functional as F
 from torch.utils.data import Dataset, DataLoader
@@ -15,6 +16,9 @@ from tqdm.auto import tqdm
 from bert.tokenize import prepare_bert_tokenizer
 from bert.model import BERTBase
 
+# np.set_printoptions(edgeitems=20, linewidth=sys.maxsize, suppress=False)
+torch.set_printoptions(edgeitems=16, linewidth=sys.maxsize, sci_mode=True)
+
 
 class BookCorpusForBERT(Dataset):
     def __init__(self, data_dir, tokenizer, max_len):
@@ -25,9 +29,10 @@ class BookCorpusForBERT(Dataset):
         self.cls_id = self.tokenizer.token_to_id("[CLS]")
         self.sep_id = self.tokenizer.token_to_id("[SEP]")
         self.pad_id = self.tokenizer.token_to_id("[PAD]")
+        self.unk_id = tokenizer.token_to_id("[UNK]")
 
         self.corpus = self._prepare_corpus(data_dir=data_dir, tokenizer=tokenizer)
-        self.nsp_data = self._prepare_nsp_data(corpus=self.corpus)
+        self.data = self._prepare_data(corpus=self.corpus)
 
     def _prepare_corpus(self, data_dir, tokenizer):
         corpus = list()
@@ -40,43 +45,48 @@ class BookCorpusForBERT(Dataset):
                 corpus.append({"document": str(doc_path), "text": para, "ids": ids})
         return corpus
 
-    def _prepare_nsp_data(self, corpus):
-        nsp_data = list()
+    def _prepare_data(self, corpus):
+        random.shuffle(corpus)
+
         for id1 in range(len(corpus) - 1):
-            seg1 = corpus[id1]["text"]
-            seg1_ids = corpus[id1]["ids"]
             if random.random() < 0.5:
-                seg2 = corpus[id1 + 1]["text"]
-                seg2_ids = corpus[id1 + 1]["ids"]
                 is_next = True
+                id2 = id1 + 1
             else:
-                id2 = random.randrange(len(corpus))
-                seg2 = corpus[id2]["text"]
-                seg2_ids = corpus[id2]["ids"]
                 is_next = False
-            nsp_data.append({
-                "segment1": seg1,
-                "segment2": seg2,
-                "segment1_ids": seg1_ids,
-                "segment2_ids": seg2_ids,
-                "is_next": is_next,
-            })
-        return nsp_data
+                id2 = random.randrange(len(corpus))
+            text = [corpus[id1]["text"], corpus[id2]["text"]]
+            ids = [corpus[id1]["ids"], corpus[id2]["ids"]]
+
+            merged = self._merge_ids_and_add_special_tokens_1(ids)
+            data.append({"text": text, "ids": ids, "merged_ids": merged,"is_next": is_next})
+        return data
+
+    def _get_segment_indices_from_token_indices(self, token_ids):
+        seg_ids = torch.zeros_like(token_ids, dtype=token_ids.dtype, device=token_ids.device)
+        is_sep = (token_ids == self.sep_id)
+        if is_sep.sum() == 2:
+            a, b = is_sep.nonzero()
+            seg_ids[a + 1: b + 1] = 1
+        return seg_ids
     
     def __len__(self):
-        return len(self.nsp_data)
+        return len(self.data)
 
     def __getitem__(self, idx):
-        dic = self.nsp_data[idx]
-        x = torch.as_tensor((
-            [self.cls_id]\
-                + dic["segment1_ids"]\
-                + [self.sep_id]\
-                + dic["segment2_ids"]\
-                + [self.sep_id]\
-                + [self.pad_id] * (self.max_len - len(dic["segment1_ids"]) + len(dic["segment2_ids"]) - 3)\
-        )[: self.max_len])
-        return x
+        token_ids = torch.as_tensor(self.data[idx]["merged_ids"])
+        seg_ids = self._get_segment_indices_from_token_indices(token_ids)
+        return token_ids, seg_ids, torch.as_tensor(self.data[idx]["is_next"])
+
+
+# def _get_segment_indices_from_token_indices(token_ids, sep_id):
+#     seg_ids = torch.zeros_like(token_ids, dtype=token_ids.dtype, device=token_ids.device)
+#     for i in range(token_ids.shape[0]):
+#         is_sep = (token_ids[i] == sep_id)
+#         if is_sep.sum() == 2:
+#             a, b = is_sep.nonzero()
+#             seg_ids[i, a + 1: b + 1] = 1
+#     return seg_ids
  
 
 if __name__ == "__main__":
@@ -87,10 +97,15 @@ if __name__ == "__main__":
 
     MAX_LEN = 512
     ds = BookCorpusForBERT(data_dir=data_dir, tokenizer=tokenizer, max_len=MAX_LEN)
-    BATCH_SIZE = 8
+    BATCH_SIZE = 4
     dl = DataLoader(dataset=ds, batch_size=BATCH_SIZE, shuffle=True, drop_last=True)
     for batch, data in enumerate(dl, start=1):
-        data == 2
+        data
+        seg_ids = _get_segment_indices_from_token_indices(data)
+        # show_image((seg_ids.numpy() * 255).astype("uint8"))
+        
+        
+            
         # print(
         #     data["gt_tokens"].shape,
         #     data["replaced_tokens"].shape,

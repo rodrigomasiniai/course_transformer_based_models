@@ -13,40 +13,20 @@ import numpy as np
 # 원래의 RoBERTa는 BPE를 사용함
 from bert.tokenize import prepare_bert_tokenizer
 
-np.set_printoptions(suppress=True, linewidth=sys.maxsize, threshold=sys.maxsize)
-torch.set_printoptions(edgeitems=10, sci_mode=True)
-
-
-mode="doc_sentences"
-data = list()
-text = [corpus[0]["text"]]
-ids = [corpus[0]["ids"]]
-for id_ in range(1, len(corpus)):
-    if corpus[id_ - 1]["document"] != corpus[id_]["document"]:
-        data.append({"text": text, "ids": ids})
-
-        text = [corpus[id_]["text"]]
-        ids = [corpus[id_]["ids"]]
-
-    cur_len = sum([len(i) for i in ids])
-    if cur_len + len(corpus[id_]["ids"]) <= max_len - 2:
-        text.append(corpus[id_]["text"])
-        ids.append(corpus[id_]["ids"])
-data[0]["text"]
-for k in range(100):
-    sum([len(i) for i in data[k]["ids"]])
+np.set_printoptions(edgeitems=20, linewidth=sys.maxsize, suppress=False)
+torch.set_printoptions(edgeitems=16, linewidth=sys.maxsize, sci_mode=True)
 
 
 class BookCorpusForRoBERTa(Dataset):
     def __init__(
         self,
-        tokenizer,
         data_dir,
+        tokenizer,
         max_len,
         mode: Literal["segment_pair", "sentence_pair", "full_sentences", "doc_sentences",]="doc_sentences"
     ):
-        self.tokenizer = tokenizer
         self.data_dir = data_dir
+        self.tokenizer = tokenizer
         self.max_len = max_len
         self.mode = mode
 
@@ -56,6 +36,7 @@ class BookCorpusForRoBERTa(Dataset):
         self.unk_id = tokenizer.token_to_id("[UNK]")
 
         self.corpus = self._prepare_corpus(data_dir=data_dir, tokenizer=tokenizer)
+        self.data = self._prepare_data(self.corpus)
     
     def _prepare_corpus(self, data_dir, tokenizer):
         corpus = list()
@@ -68,103 +49,113 @@ class BookCorpusForRoBERTa(Dataset):
                 corpus.append({"document": str(doc_path), "text": para, "ids": ids})
         return corpus
 
-    def _prepare_nsp_data(self, corpus):
-        nsp_data = list()
-        for id1 in range(len(corpus) - 1):
-            seg1 = corpus[id1]["text"]
-            seg1_ids = corpus[id1]["ids"]
-            if random.random() < 0.5:
-                seg2 = corpus[id1 + 1]["text"]
-                seg2_ids = corpus[id1 + 1]["ids"]
-                is_next = True
-            else:
-                id2 = random.randrange(len(corpus))
-                seg2 = corpus[id2]["text"]
-                seg2_ids = corpus[id2]["ids"]
-                is_next = False
-            nsp_data.append({
-                "segment1": seg1,
-                "segment2": seg2,
-                "segment1_ids": seg1_ids,
-                "segment2_ids": seg2_ids,
-                "is_next": is_next,
-            })
-        return nsp_data
+    def _merge_ids_and_add_special_tokens_1(self, ids):
+        merged = (
+            [self.cls_id] + ids[0][: self.max_len - 3] + [self.sep_id] + ids[1]
+        )[: self.max_len - 1] + [self.sep_id]
+        merged += [self.pad_id] * (self.max_len - len(merged))
+        return merged
 
-    def __len__(self):
-        return len(self.corpus)
+    def _merge_ids_and_add_special_tokens_2(self, ids):
+        merged = sum(ids, list())
+        merged = merged[: self.max_len - 2]
+        merged = [self.cls_id] + merged + [self.sep_id]
+        merged += [self.pad_id] * (self.max_len - len(merged))
+        return merged
 
-    def __getitem__(self, idx):
-        return self.corpus[idx]
+    def _prepare_data(self, corpus):
+        data = list()
 
-    def _collect_corpus(self, data_dir, max_len, mode, shuffle_docs=True):
-        docs = list(Path(data_dir).glob("**/*.txt"))
-        if shuffle_docs:
-            random.shuffle(docs)
+        # "Each input has a pair of segments, which can each contain multiple natural sentences,
+        # but the total combined length must be less than 512 tokens."
+        if self.mode == "segment_pair":
+            random.shuffle(corpus)
 
-        corpus = list()
-        seq = [self.cls_id]
-        for doc_id, doc_path in enumerate(tqdm(docs)):
-            is_first_sent = True
-            for line in open(doc_path, mode="r", encoding="utf-8"):
-                line = line.strip()
-                if line == "":
-                    continue
+            for id1 in range(len(corpus) - 1):
+                if random.random() < 0.5:
+                    is_next = True
+                    id2 = id1 + 1
+                else:
+                    is_next = False
+                    id2 = random.randrange(len(corpus))
+                text = [corpus[id1]["text"], corpus[id2]["text"]]
+                ids = [corpus[id1]["ids"], corpus[id2]["ids"]]
 
+                merged = self._merge_ids_and_add_special_tokens_1(ids)
+                data.append({"text": text, "ids": ids, "merged_ids": merged,"is_next": is_next})
+
+        elif self.mode == "full_sentences":
+            text = [corpus[0]["text"]]
+            ids = [corpus[0]["ids"]]
+            for id_ in range(1, len(corpus)):
                 # "Inputs may cross document boundaries. When we reach the end of one document,
                 # we begin sampling sentences from the next document
                 # and add an extra separator token between documents."
-                if mode == "full_sentences" and is_first_sent and doc_id != 0:
-                    seq.append(self.sep_id)
-                    is_first_sent = False
+                if corpus[id_ - 1]["document"] != corpus[id_]["document"]:
+                    ids.append([self.sep_id])
 
-                encoded = tokenizer.encode(line)
-                ids = encoded.ids
-                if mode in ["full_sentences", "doc_sentences"]:
-                    if len(seq) + len(ids) <= max_len - 1: # "such that the total length is at most 512 tokens"
-                        seq.extend(ids)
-                    else:
-                        seq.extend([self.pad_id] * (max_len - len(seq) - 1) + [self.sep_id])
-                        corpus.append(seq)
+                # Each input is packed with full sentences sampled contiguously
+                # from one or more documents, such that the total length is at most 512 tokens.
+                if len(sum(ids, list())) + len(corpus[id_]["ids"]) > self.max_len - 2 or\
+                id_ == len(corpus) - 1:
+                    merged = self._merge_ids_and_add_special_tokens_2(ids)
+                    data.append({"text": text, "ids": ids, "merged_ids": merged})
 
-                        seq = [self.cls_id]
-                if mode == "segment_pair":
-                    corpus.append(ids)
+                    text = list()
+                    ids = list()
+                text.append(corpus[id_]["text"])
+                ids.append(corpus[id_]["ids"])
 
-        # if mode == "segment_pair":
-        #     random.shuffle(corpus)
-        #     new_corpus = list()
-        #     seq = [self.cls_id]
-        #     for i in range(len(corpus) // 2):
-        #         seq1 = corpus[2 * i]
-        #         seq2 = corpus[2 * i + 1]
-        #         if len(seq1) + len(seq1) - 3 > max_len:
-
-
-        #     corpus = [
-        #         [self.cls_id] + corpus[2 * i] + [self.sep_id] +  corpus[2 * i + 1] + [self.sep_id]
-        #         for i in range(len(corpus) // 2)
-        #     ]
-        corpus = torch.as_tensor(corpus, dtype=torch.int64)
-        # Inputs sampled near the end of a document may be shorter than 512 tokens,
+        # "Inputs sampled near the end of a document may be shorter than 512 tokens,
         # so we dynamically increase the batch size in these cases
-        # to achieve a similar number of total tokens as "FULL-SENTENCES".
-        return corpus
+        # to achieve a similar number of total tokens as 'FULL-SENTENCES'."
+        # 어떻게 구현할 것인가?
+        elif self.mode == "doc_sentences":
+            text = [corpus[0]["text"]]
+            ids = [corpus[0]["ids"]]
+            for id_ in range(1, len(corpus)):
+                # except that they may not cross document boundaries.
+                # Inputs are constructed similarly to "FULL-SENTENCES",
+                if corpus[id_ - 1]["document"] != corpus[id_]["document"] or\
+                len(sum(ids, list())) + len(corpus[id_]["ids"]) > self.max_len - 2 or\
+                id_ == len(corpus) - 1:
+                    merged = self._merge_ids_and_add_special_tokens_2(ids)
+                    data.append({"text": text, "ids": ids, "merged_ids": merged})
+
+                    text = list()
+                    ids = list()
+                text.append(corpus[id_]["text"])
+                ids.append(corpus[id_]["ids"])
+        return data
+
+    def _get_segment_indices_from_token_indices(self, token_ids):
+        seg_ids = torch.zeros_like(token_ids, dtype=token_ids.dtype, device=token_ids.device)
+        is_sep = (token_ids == self.sep_id)
+        if is_sep.sum() == 2:
+            a, b = is_sep.nonzero()
+            seg_ids[a + 1: b + 1] = 1
+        return seg_ids
+
+    def __len__(self):
+        return len(self.data)
+
+    def __getitem__(self, idx):
+        if self.mode in ["segment_pair", "sentence_pair"]:
+            token_ids = torch.as_tensor(self.data[idx]["merged_ids"])
+            seg_ids = self._get_segment_indices_from_token_indices(token_ids)
+            return token_ids, seg_ids, torch.as_tensor(self.data[idx]["is_next"])
+        else:
+            return torch.as_tensor(self.data[idx]["merged_ids"])
 
 
 if __name__ == "__main__":
     vocab_path = "/Users/jongbeomkim/Desktop/workspace/transformer_based_models/bert/vocab_example.json"
     tokenizer = prepare_bert_tokenizer(vocab_path=vocab_path)
     data_dir = "/Users/jongbeomkim/Documents/datasets/bookcorpus_subset"
-    max_len = 512
-    # ds = BookCorpusForRoBERTa(tokenizer=tokenizer, data_dir=data_dir, max_len=max_len, mode="doc_sentences")
-    ds = BookCorpusForRoBERTa(tokenizer=tokenizer, data_dir=data_dir, max_len=max_len, mode="full_sentences")
+    MAX_LEN = 512
+    ds = BookCorpusForRoBERTa(tokenizer=tokenizer, data_dir=data_dir, max_len=MAX_LEN, mode="segment_pair")
     BATCH_SIZE = 8
-    # dl = DataLoader(dataset=ds, batch_size=BATCH_SIZE, shuffle=True, drop_last=True)
-    dl = DataLoader(dataset=ds, batch_size=BATCH_SIZE, shuffle=False, drop_last=True)
-    for batch, data in enumerate(dl, start=1):
-        data
-        data.shape
-        # if torch.isin(data, ds.sep_id).sum() != 8:
-        #     seq = ((data == 2).numpy() * 255).astype("uint8")
-        #     show_image(seq)
+    dl = DataLoader(dataset=ds, batch_size=BATCH_SIZE, shuffle=True, drop_last=True)
+    # for batch, token_ids in enumerate(dl, start=1):
+    for batch, (token_ids, seg_ids, is_next) in enumerate(dl, start=1):
+        token_ids
