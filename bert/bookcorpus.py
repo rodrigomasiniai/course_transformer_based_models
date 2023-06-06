@@ -101,15 +101,3 @@ if __name__ == "__main__":
     dl = DataLoader(dataset=ds, batch_size=BATCH_SIZE, shuffle=True, drop_last=True)
     for batch, data in enumerate(dl, start=1):
         data
-        seg_ids = _get_segment_indices_from_token_indices(data)
-        # show_image((seg_ids.numpy() * 255).astype("uint8"))
-        
-        
-            
-        # print(
-        #     data["gt_tokens"].shape,
-        #     data["replaced_tokens"].shape,
-        #     data["target_ids"].shape,
-        #     data["segment_indices"].shape,
-        #     data["is_next"].shape
-        # )
