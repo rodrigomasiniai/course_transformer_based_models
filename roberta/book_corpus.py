@@ -204,6 +204,7 @@ def print(token_ids, sep_id):
 if __name__ == "__main__":
     vocab_path = "/Users/jongbeomkim/Desktop/workspace/transformer_based_models/bert/vocab_example.json"
     tokenizer = prepare_bert_tokenizer(vocab_path=vocab_path)
+
     data_dir = "/Users/jongbeomkim/Documents/datasets/bookcorpus_subset"
     MAX_LEN = 512
     # ds = BookCorpusForRoBERTa(tokenizer=tokenizer, data_dir=data_dir, max_len=MAX_LEN, mode="sentence_pair")

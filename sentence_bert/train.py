@@ -6,7 +6,7 @@ from transformers import AutoTokenizer
 
 from bert.model import BERTBase
 from sentence_bert.model import SentenceBERTForRegression
-from sentence_bert.stsb import STSbenchmarkDataset, STSbenchmarkCollator
+from sentence_bert.sts_benchmark import STSbenchmarkDataset, STSbenchmarkCollator
 
 REG_LOSS_FN = nn.MSELoss()
 
