@@ -89,9 +89,10 @@ class SentenceBERTWithTripletNetworks(nn.Module):
             _perform_sentence_bert_pooler(p, pooler=self.pooler),
             _perform_sentence_bert_pooler(n, pooler=self.pooler)
         )
-        x = LA.vector_norm(a - p, ord=2, dim=1) - LA.vector_norm(a - n, ord=2, dim=1) + self.eps
-        x = F.relu(x)
-        return x
+        return a, p, n
+        # x = LA.vector_norm(a - p, ord=2, dim=1) - LA.vector_norm(a - n, ord=2, dim=1) + self.eps
+        # x = F.relu(x)
+        # return x
 
     def _get_finetuned_embedder(self):
         return self.embedder

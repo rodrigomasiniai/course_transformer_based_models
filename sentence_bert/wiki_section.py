@@ -1,6 +1,5 @@
 # References
     # https://github.com/sebastianarnold/WikiSection.git
-    # https://github.com/UKPLab/sentence-transformers/blob/master/examples/training/other/training_wikipedia_sections.py
 
 import sys
 import torch
@@ -21,44 +20,44 @@ def _group_by_sections(wiki_data, tokenizer):
     cls_id = tokenizer.token_to_id("[CLS]")
     sep_id = tokenizer.token_to_id("[SEP]")
 
-    sents_by_sec = defaultdict(list)
+    sec2sents = defaultdict(list)
     for block in tqdm(wiki_data):
         annot = block["annotations"]
         parag = block["text"]
         for section in annot:
             sent = parag[section["begin"]: section["begin"] + section["length"]]
             token_ids = [cls_id] + tokenizer.encode(sent).ids + [sep_id]
-            sents_by_sec[section["sectionLabel"]].append(token_ids)
-    return sents_by_sec
+            sec2sents[section["sectionLabel"]].append(token_ids)
+    return sec2sents
 
 
-def _sample_positive_sentence(sents_by_sec, anchor_sec, anchor):
-    sents = sents_by_sec[anchor_sec]
+def _sample_positive_sentence(sec2sents, anchor_sec, anchor):
+    sents = sec2sents[anchor_sec]
     pos = deepcopy(anchor)
     while pos == anchor:
         pos = random.choice(sents)
     return pos
 
 
-def _sample_negative_sentence(sents_by_sec, anchor_sec):
-    secs = list(sents_by_sec)
+def _sample_negative_sentence(sec2sents, anchor_sec):
+    secs = list(sec2sents)
     neg_sec = deepcopy(anchor_sec)
     while neg_sec == anchor_sec:
         neg_sec = random.choice(secs)
-    neg = random.choice(sents_by_sec[neg_sec])
+    neg = random.choice(sec2sents[neg_sec])
     return neg
 
 
 def _get_wiki_section_dataset(json_path, tokenizer):
     with open(json_path, mode="r") as f:
         wiki_data = jsonable_encoder(json.load(f))
-        sents_by_sec = _group_by_sections(wiki_data, tokenizer=tokenizer)
+        sec2sents = _group_by_sections(wiki_data, tokenizer=tokenizer)
 
     ds = list()
-    for anchor_sec in sents_by_sec.keys():
-        for anchor in sents_by_sec[anchor_sec]:
-            pos = _sample_positive_sentence(sents_by_sec=sents_by_sec, anchor_sec=anchor_sec, anchor=anchor)
-            neg = _sample_negative_sentence(sents_by_sec=sents_by_sec, anchor_sec=anchor_sec)
+    for anchor_sec in sec2sents.keys():
+        for anchor in sec2sents[anchor_sec]:
+            pos = _sample_positive_sentence(sec2sents=sec2sents, anchor_sec=anchor_sec, anchor=anchor)
+            neg = _sample_negative_sentence(sec2sents=sec2sents, anchor_sec=anchor_sec)
 
             ds.append((anchor, pos, neg))
     return ds
@@ -80,31 +79,33 @@ class WikiSectionCollator(object):
         return token_ids
     
     def __call__(self, batch):
-        anchor_max_len = min(self.max_len, max([len(anchor) for anchor, _, _ in batch]))
-        pos_max_len = min(self.max_len, max([len(pos) for _, pos, _ in batch]))
-        neg_max_len = min(self.max_len, max([len(neg) for _, _, neg in batch]))
+        a_max_len = min(self.max_len, max([len(a) for a, _, _ in batch]))
+        p_max_len = min(self.max_len, max([len(p) for _, p, _ in batch]))
+        n_max_len = min(self.max_len, max([len(n) for _, _, n in batch]))
 
-        anchors, poss, negs = list(), list(), list()
-        for anchor, pos, neg in batch:
-            anchor = self._truncate_or_pad(token_ids=anchor, max_len=anchor_max_len)
-            pos = self._truncate_or_pad(token_ids=pos, max_len=pos_max_len)
-            neg = self._truncate_or_pad(token_ids=neg, max_len=neg_max_len)
+        a_ls, p_ls, n_ls = list(), list(), list()
+        for a, p, n in batch:
+            a = self._truncate_or_pad(token_ids=a, max_len=a_max_len)
+            p = self._truncate_or_pad(token_ids=p, max_len=p_max_len)
+            n = self._truncate_or_pad(token_ids=n, max_len=n_max_len)
 
-            anchors.append(anchor)
-            poss.append(pos)
-            negs.append(neg)
-        return torch.as_tensor(anchors), torch.as_tensor(poss), torch.as_tensor(negs)
+            a_ls.append(a)
+            p_ls.append(p)
+            n_ls.append(n)
+        return torch.as_tensor(a_ls), torch.as_tensor(p_ls), torch.as_tensor(n_ls)
 
 
-if __name__ == "__main__":
-    vocab_path = "/Users/jongbeomkim/Desktop/workspace/transformer_based_models/bert/vocab_example.json"
-    tokenizer = prepare_bert_tokenizer(vocab_path=vocab_path)
+# if __name__ == "__main__":
+#     vocab_path = "/Users/jongbeomkim/Desktop/workspace/transformer_based_models/bert/vocab_example.json"
+#     tokenizer = prepare_bert_tokenizer(vocab_path=vocab_path)
 
-    json_path = "/Users/jongbeomkim/Documents/datasets/wikisection_dataset_json/wikisection_en_city_train.json"
-    ds = _get_wiki_section_dataset(json_path=json_path, tokenizer=tokenizer)
-    MAX_LEN = 512
-    collator = WikiSectionCollator(tokenizer=tokenizer, max_len=MAX_LEN)
-    BATCH_SIZE = 8
-    dl = DataLoader(dataset=ds, batch_size=BATCH_SIZE, shuffle=True, drop_last=True, collate_fn=collator)
-    for batch, (anchor, pos, neg) in enumerate(dl, start=1):
-        print(anchor.shape, pos.shape, neg.shape)
+#     json_path = "/Users/jongbeomkim/Documents/datasets/wikisection_dataset_json/wikisection_en_city_train.json"
+#     wiki_ds = _get_wiki_section_dataset(json_path=json_path, tokenizer=tokenizer)
+#     MAX_LEN = 512
+#     wiki_collator = WikiSectionCollator(tokenizer=tokenizer, max_len=MAX_LEN)
+#     BATCH_SIZE = 8
+#     wiki_dl = DataLoader(
+#         dataset=wiki_ds, batch_size=BATCH_SIZE, shuffle=True, drop_last=True, collate_fn=wiki_collator
+#     )
+#     for batch, (a, pos, neg) in enumerate(wiki_, start=1):
+#         print(a.shape, pos.shape, neg.shape)

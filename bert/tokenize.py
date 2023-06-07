@@ -18,7 +18,9 @@ def prepare_bert_tokenizer(vocab_path, corpus_files=None, post_processor=False):
         tokenizer.normalizer = normalizers.Sequence([NFD(), Lowercase(), StripAccents()])
         tokenizer.pre_tokenizer = Whitespace()
 
-        trainer = WordPieceTrainer(vocab_size=VOCAB_SIZE, special_tokens=["[UNK]", "[CLS]", "[SEP]", "[PAD]", "[MASK]"])
+        trainer = WordPieceTrainer(
+            vocab_size=VOCAB_SIZE, special_tokens=["[UNK]", "[CLS]", "[SEP]", "[PAD]", "[MASK]"]
+        )
         tokenizer.train(files=corpus_files, trainer=trainer)
         tokenizer.save(vocab_path)
 
