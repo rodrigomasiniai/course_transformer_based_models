@@ -1,16 +1,15 @@
 # References
     # https://d2l.ai/chapter_natural-language-processing-pretraining/bert-dataset.html#sec-bert-dataset
 
+import sys
 import torch
 from torch.utils.data import Dataset, DataLoader
+import numpy as np
 from pathlib import Path
 from tqdm.auto import tqdm
 from typing import Literal
 import random
-import sys
-import numpy as np
 import pysbd
-from pprint import pprint
 
 # 원래의 RoBERTa는 BPE를 사용함
 from bert.tokenize import prepare_bert_tokenizer
@@ -25,8 +24,11 @@ class BookCorpusForRoBERTa(Dataset):
         data_dir,
         tokenizer,
         max_len,
-        mode: Literal["segment_pair", "sentence_pair", "full_sentences", "doc_sentences",]="doc_sentences"
+        mode: Literal["segment_pair", "sentence_pair", "full_sentences", "doc_sentences"]="doc_sentences"
     ):
+        assert mode in ["segment_pair", "sentence_pair", "full_sentences", "doc_sentences"],\
+        "The argument `mode` should be one of `'segment_pair'`, `'sentence_pair'`, 'full_sentences', and 'doc_sentences'."
+
         self.data_dir = data_dir
         self.tokenizer = tokenizer
         self.max_len = max_len
@@ -80,19 +82,18 @@ class BookCorpusForRoBERTa(Dataset):
                     )
         return corpus
 
-    def _merge_ids_and_add_special_tokens_1(self, ids):
-        merged = (
-            [self.cls_id] + ids[0][: self.max_len - 3] + [self.sep_id] + ids[1]
-        )[: self.max_len - 1] + [self.sep_id]
-        merged += [self.pad_id] * (self.max_len - len(merged))
-        return merged
-
-    def _merge_ids_and_add_special_tokens_2(self, ids):
-        merged = sum(ids, list())
-        merged = merged[: self.max_len - 2]
-        merged = [self.cls_id] + merged + [self.sep_id]
-        merged += [self.pad_id] * (self.max_len - len(merged))
-        return merged
+    def _convert_to_bert_input_representation(self, ls_token_ids):
+        if self.mode in ["segment_pair", "sentence_pair"]:
+            token_ids = (
+                [self.cls_id] + ls_token_ids[0][: self.max_len - 3] + [self.sep_id] + ls_token_ids[1]
+            )[: self.max_len - 1] + [self.sep_id]
+            token_ids += [self.pad_id] * (self.max_len - len(token_ids))
+        else:
+            token_ids = sum(ls_token_ids, list())
+            token_ids = token_ids[: self.max_len - 2]
+            token_ids = [self.cls_id] + token_ids + [self.sep_id]
+            token_ids += [self.pad_id] * (self.max_len - len(token_ids))
+        return token_ids
 
     def _prepare_data(self, corpus):
         data = list()
@@ -110,7 +111,7 @@ class BookCorpusForRoBERTa(Dataset):
                 segs = [corpus[id1]["paragraph"], corpus[id2]["paragraph"]]
                 ls_token_ids = [corpus[id1]["token_indices"], corpus[id2]["token_indices"]]
 
-                token_ids = self._merge_ids_and_add_special_tokens_1(ls_token_ids)
+                token_ids = self._convert_to_bert_input_representation(ls_token_ids)
                 data.append(
                     {
                         "segments": segs,
@@ -135,7 +136,7 @@ class BookCorpusForRoBERTa(Dataset):
                 sents = [corpus[id1]["sentence"], corpus[id2]["sentence"]]
                 ls_token_ids = [corpus[id1]["token_indices"], corpus[id2]["token_indices"]]
 
-                token_ids = self._merge_ids_and_add_special_tokens_1(ls_token_ids)
+                token_ids = self._convert_to_bert_input_representation(ls_token_ids)
                 data.append(
                     {
                         "sentences": sents,
@@ -159,21 +160,20 @@ class BookCorpusForRoBERTa(Dataset):
                 # from one or more documents, such that the total length is at most 512 tokens.
                 if len(sum(ls_token_ids, list())) + len(corpus[id_]["token_indices"]) > self.max_len - 2 or\
                 id_ == len(corpus) - 1:
-                    token_ids = self._merge_ids_and_add_special_tokens_2(ls_token_ids)
+                    token_ids = self._convert_to_bert_input_representation(ls_token_ids)
                     data.append(
                         {"sentences": sents, "lists_of_token_indices": ls_token_ids, "token_indices": token_ids}
                     )
 
                     sents = list()
-                    token_ids = list()
+                    ls_token_ids = list()
                 sents.append(corpus[id_]["sentence"])
                 ls_token_ids.append(corpus[id_]["token_indices"])
 
         # "Inputs sampled near the end of a document may be shorter than 512 tokens,
         # so we dynamically increase the batch size in these cases
         # to achieve a similar number of total tokens as 'FULL-SENTENCES'."
-        # 어떻게 구현할 것인가?
-        elif self.mode == "doc_sentences":
+        else: # `"doc_sentences"`
             sents = [corpus[0]["sentence"]]
             ls_token_ids = [corpus[0]["token_indices"]]
             for id_ in range(1, len(corpus)):
@@ -182,15 +182,15 @@ class BookCorpusForRoBERTa(Dataset):
                 if corpus[id_ - 1]["document"] != corpus[id_]["document"] or\
                 len(sum(ls_token_ids, list())) + len(corpus[id_]["token_indices"]) > self.max_len - 2 or\
                 id_ == len(corpus) - 1:
-                    token_ids = self._merge_ids_and_add_special_tokens_2(ls_token_ids)
+                    token_ids = self._convert_to_bert_input_representation(ls_token_ids)
                     data.append(
-                        {"sentences": sents, "lists_of_token_indiecs": ls_token_ids, "token_indices": token_ids}
+                        {"sentences": sents, "lists_of_token_indices": ls_token_ids, "token_indices": token_ids}
                     )
 
                     sents = list()
-                    token_ids = list()
+                    ls_token_ids = list()
                 sents.append(corpus[id_]["sentence"])
-                token_ids.append(corpus[id_]["token_indices"])
+                ls_token_ids.append(corpus[id_]["token_indices"])
         return data
 
     def _get_segment_indices_from_token_indices(self, token_ids):
@@ -226,7 +226,7 @@ if __name__ == "__main__":
     data_dir = "/Users/jongbeomkim/Documents/datasets/bookcorpus_subset"
     vocab_path = "/Users/jongbeomkim/Desktop/workspace/transformer_based_models/bert/vocab_example.json"
     tokenizer = prepare_bert_tokenizer(vocab_path=vocab_path)
-    ds = BookCorpusForRoBERTa(data_dir=data_dir, tokenizer=tokenizer, max_len=MAX_LEN, mode="doc_sentences")
+    ds = BookCorpusForRoBERTa(data_dir=data_dir, tokenizer=tokenizer, max_len=MAX_LEN, mode="full_sentences")
     dl = DataLoader(dataset=ds, batch_size=BATCH_SIZE, shuffle=True, drop_last=True)
     for batch, token_ids in enumerate(dl, start=1):
     # for batch, (token_ids, seg_ids, is_next) in enumerate(dl, start=1):
