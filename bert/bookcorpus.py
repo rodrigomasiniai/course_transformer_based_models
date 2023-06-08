@@ -12,7 +12,6 @@ import json
 from pathlib import Path
 from tqdm.auto import tqdm
 
-# from bert.wordpiece_implementation import collect_corpus, tokenize
 from bert.tokenize import prepare_bert_tokenizer
 from bert.model import BERTBase
 
@@ -90,14 +89,13 @@ class BookCorpusForBERT(Dataset):
  
 
 if __name__ == "__main__":
-    vocab_path = "/Users/jongbeomkim/Desktop/workspace/transformer_based_models/bert/vocab_example.json"
-    tokenizer = prepare_bert_tokenizer(vocab_path=vocab_path)
+    MAX_LEN = 512
+    BATCH_SIZE = 4
 
     data_dir = "/Users/jongbeomkim/Documents/datasets/bookcorpus_subset"
-
-    MAX_LEN = 512
+    vocab_path = "/Users/jongbeomkim/Desktop/workspace/transformer_based_models/bert/vocab_example.json"
+    tokenizer = prepare_bert_tokenizer(vocab_path=vocab_path)
     ds = BookCorpusForBERT(data_dir=data_dir, tokenizer=tokenizer, max_len=MAX_LEN)
-    BATCH_SIZE = 4
     dl = DataLoader(dataset=ds, batch_size=BATCH_SIZE, shuffle=True, drop_last=True)
     for batch, data in enumerate(dl, start=1):
         data

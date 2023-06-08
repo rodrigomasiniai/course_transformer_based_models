@@ -75,17 +75,17 @@ class STSbenchmarkCollator(object):
         return scores, sents1, sents2
 
 
-if __name__ == "__main__":
-    csv_path = "/Users/jongbeomkim/Documents/datasets/stsbenchmark/sts-train.csv"
-    tokenizer = AutoTokenizer.from_pretrained("bert-base-cased")
-    stsb_ds = STSbenchmarkDataset(csv_path=csv_path, tokenizer=tokenizer)
-    stsb_collator = STSbenchmarkCollator(tokenizer=tokenizer)
-    stsb_dl = DataLoader(
-        stsb_ds,
-        batch_size=8,
-        shuffle=False,
-        drop_last=True,
-        collate_fn=stsb_collator
-    )
-    for batch, (score, sent1, sent2) in enumerate(stsb_dl, start=1):
-        print(sent1.shape, sent2.shape)
+# if __name__ == "__main__":
+#     csv_path = "/Users/jongbeomkim/Documents/datasets/stsbenchmark/sts-train.csv"
+#     tokenizer = AutoTokenizer.from_pretrained("bert-base-cased")
+#     stsb_ds = STSbenchmarkDataset(csv_path=csv_path, tokenizer=tokenizer)
+#     stsb_collator = STSbenchmarkCollator(tokenizer=tokenizer)
+#     stsb_dl = DataLoader(
+#         stsb_ds,
+#         batch_size=8,
+#         shuffle=False,
+#         drop_last=True,
+#         collate_fn=stsb_collator
+#     )
+#     for batch, (score, sent1, sent2) in enumerate(stsb_dl, start=1):
+#         print(sent1.shape, sent2.shape)

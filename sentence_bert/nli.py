@@ -9,23 +9,24 @@ pd.options.display.max_colwidth = sys.maxsize
 torch.set_printoptions(edgeitems=16, linewidth=sys.maxsize, sci_mode=True)
 
 
-def _get_snli_dataset(txt_path):
-    df = pd.read_csv(txt_path, sep="\t", keep_default_na=False)
+def _get_nli_dataset(txt_path, tokenizer):
+    df = pd.read_csv(txt_path, sep="\t", keep_default_na=False, on_bad_lines="skip", low_memory=False)
 
     df = df[["sentence1", "sentence2", "gold_label"]]
-    df = df[df["gold_label"].isin(["neutral", "entailment", "contraction"])]
-    df["gold_label"] = df["gold_label"].astype("category").cat.codes
+    df = df[df["gold_label"].isin(["neutral", "entailment", "contradiction"])]
+    df["gold_label"] = df["gold_label"].map({"entailment": 0, "neutral": 1, "contradiction": 2})
+    df["gold_label"].unique()
 
     prem2token_ids = {sent: tokenizer.encode(sent).ids for sent in df["sentence1"].unique()}
     hypo2token_ids = {sent: tokenizer.encode(sent).ids for sent in df["sentence2"].unique()}
 
-    snli_ds = list(zip(
+    nli_ds = list(zip(
         df["sentence1"].map(prem2token_ids), df["sentence2"].map(hypo2token_ids), df["gold_label"]
     ))
-    return snli_ds
+    return nli_ds
 
 
-class SNLICollator(object):
+class NLICollator(object):
     def __init__(self, tokenizer, max_len):
         self.max_len = max_len
 
@@ -55,17 +56,18 @@ class SNLICollator(object):
         return torch.as_tensor(ps), torch.as_tensor(hs), torch.as_tensor(labels)
 
 
-if __name__ == "__main__":
-    txt_path = "/Users/jongbeomkim/Documents/datasets/snli_1.0/snli_1.0_train.txt"
-    snli_ds = _get_snli_dataset(txt_path)
+# if __name__ == "__main__":
+#     # txt_path = "/Users/jongbeomkim/Documents/datasets/nli_1.0/nli_1.0_train.txt"
+#     txt_path = "/Users/jongbeomkim/Documents/datasets/multinli_1.0/multinli_1.0_train.txt"
+#     nli_ds = _get_nli_dataset(txt_path)
 
-    MAX_LEN = 512
-    vocab_path = "/Users/jongbeomkim/Desktop/workspace/transformer_based_models/bert/vocab_example.json"
-    tokenizer = prepare_bert_tokenizer(vocab_path=vocab_path)
-    snli_collator = SNLICollator(tokenizer=tokenizer, max_len=MAX_LEN)
-    BATCH_SIZE = 8
-    snli_dl = DataLoader(
-        dataset=snli_ds, batch_size=BATCH_SIZE, shuffle=True, drop_last=True, collate_fn=snli_collator
-    )
-    for batch, (p, h, label) in enumerate(snli_dl, start=1):
-        print(p.shape, h.shape, label)
+#     MAX_LEN = 512
+#     vocab_path = "/Users/jongbeomkim/Desktop/workspace/transformer_based_models/bert/vocab_example.json"
+#     tokenizer = prepare_bert_tokenizer(vocab_path=vocab_path)
+#     nli_collator = NLICollator(tokenizer=tokenizer, max_len=MAX_LEN)
+#     BATCH_SIZE = 8
+#     nli_dl = DataLoader(
+#         dataset=nli_ds, batch_size=BATCH_SIZE, shuffle=True, drop_last=True, collate_fn=nli_collator
+#     )
+#     for batch, (p, h, label) in enumerate(nli_dl, start=1):
+#         print(p.shape, h.shape, label)
