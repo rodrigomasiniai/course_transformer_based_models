@@ -17,9 +17,11 @@ from bert.model import (
     MaskedLanguageModelHead,
     # NextSentencePredictionHead
 )
+from bert.tokenize import prepare_bert_tokenizer
+from bert.masked_language_model import MaskedLanguageModel
 
 DROP_PROB = 0.1
-VOCAB_SIZE = 300
+VOCAB_SIZE = 30_522
 
 
 class ReplacedTokenDetectionHead(nn.Module):
@@ -36,8 +38,18 @@ class ReplacedTokenDetectionHead(nn.Module):
         return x
 
 
-class ELECTRAModel(nn.Module):
-    def __init__(self, vocab_size, n_layers, hidden_dim, mlp_dim, embed_dim, n_heads, pad_idx=0, drop_prob=DROP_PROB):
+class Generator(nn.Module):
+    def __init__(
+        self,
+        vocab_size,
+        n_layers,
+        hidden_dim,
+        mlp_dim,
+        embed_dim,
+        n_heads,
+        pad_idx=0,
+        drop_prob=DROP_PROB,
+    ):
         super().__init__()
 
         self.vocab_size = vocab_size
@@ -52,6 +64,8 @@ class ELECTRAModel(nn.Module):
         self.token_embed = TokenEmbedding(vocab_size=vocab_size, embed_dim=embed_dim, pad_idx=pad_idx)
         self.seg_embed = SegmentEmbedding(embed_dim=embed_dim, pad_idx=pad_idx)
         self.pos_embed = PositionEmbedding(embed_dim=embed_dim)
+        # "We add linear layers to the generator to project the embeddings into generator-hidden-sized representations."
+        # (Comment: ELECTRA-Small의 경우 Generator와 Discriminator 모두 `embed_dim`과 `hidden_dim`이 다릅니다.)
         if hidden_dim != embed_dim:
             self.embed_proj = nn.Linear(embed_dim, hidden_dim)
 
@@ -60,6 +74,59 @@ class ELECTRAModel(nn.Module):
         self.tf_block = TransformerBlock(n_layers=n_layers, n_heads=n_heads, hidden_dim=hidden_dim, mlp_dim=mlp_dim)
 
         self.mlm_head = MaskedLanguageModelHead(vocab_size=vocab_size, hidden_dim=hidden_dim)
+
+        # The 'input' and 'output' token embeddings of the generator are always tied as in BERT."
+        self.mlm_head.cls_proj.weight.data = self.token_embed.weight.data # 차원이 맞지 않음!
+
+    def forward(self, seq, seg_ids):
+        x = self.token_embed(seq)
+        x = self.pos_embed(x)
+        x += self.seg_embed(seg_ids)
+        x = self.dropout(x)
+        if self.hidden_dim != self.embed_dim:
+            x = self.embed_proj(x)
+
+        pad_mask = _get_pad_mask(seq=seq, pad_idx=self.pad_idx)
+        x = self.tf_block(x, self_attn_mask=pad_mask)
+        x = self.mlm_head(x)
+        return x
+
+
+class Discriminator(nn.Module):
+    def __init__(
+        self,
+        vocab_size,
+        n_layers,
+        hidden_dim,
+        mlp_dim,
+        embed_dim,
+        n_heads,
+        pad_idx=0,
+        drop_prob=DROP_PROB,
+    ):
+        super().__init__()
+
+        self.vocab_size = vocab_size
+        self.n_layers = n_layers
+        self.hidden_dim = hidden_dim
+        self.mlp_dim = mlp_dim
+        self.embed_dim = embed_dim
+        self.n_heads = n_heads
+        self.pad_idx = pad_idx
+        self.dropout_p = drop_prob
+
+        self.token_embed = TokenEmbedding(vocab_size=vocab_size, embed_dim=embed_dim, pad_idx=pad_idx)
+        self.seg_embed = SegmentEmbedding(embed_dim=embed_dim, pad_idx=pad_idx)
+        self.pos_embed = PositionEmbedding(embed_dim=embed_dim)
+        # "We add linear layers to the generator to project the embeddings into generator-hidden-sized representations."
+        # (Comment: ELECTRA-Small의 경우 Generator와 Discriminator 모두 `embed_dim`과 `hidden_dim`이 다릅니다.)
+        if hidden_dim != embed_dim:
+            self.embed_proj = nn.Linear(embed_dim, hidden_dim)
+
+        self.dropout = nn.Dropout(drop_prob)
+
+        self.tf_block = TransformerBlock(n_layers=n_layers, n_heads=n_heads, hidden_dim=hidden_dim, mlp_dim=mlp_dim)
+
         self.rtd_head = ReplacedTokenDetectionHead(hidden_dim=hidden_dim)
 
     def forward(self, seq, seg_ids):
@@ -72,6 +139,7 @@ class ELECTRAModel(nn.Module):
 
         pad_mask = _get_pad_mask(seq=seq, pad_idx=self.pad_idx)
         x = self.tf_block(x, self_attn_mask=pad_mask)
+        x = self.rtd_head(x)
         return x
 
 
@@ -80,13 +148,14 @@ class ELECTRA(nn.Module):
         self,
         vocab_size,
         n_layers=12,
-        disc_hidden_dim=256,
         gen_hidden_dim=64,
-        disc_n_heads=4,
+        disc_hidden_dim=256,
         gen_n_heads=1,
-        disc_mlp_dim=1024,
+        disc_n_heads=4,
         gen_mlp_dim=256,
+        disc_mlp_dim=1024,
         embed_dim=128,
+        select_prob=0.15,
         drop_prob=DROP_PROB,
         pad_idx=0
     ):
@@ -103,17 +172,18 @@ class ELECTRA(nn.Module):
         # embed_dim=128
         # drop_prob=DROP_PROB
         # pad_idx=0
-        disc = ELECTRAModel(
-            vocab_size=vocab_size,
-            n_layers=n_layers,
-            hidden_dim=disc_hidden_dim,
-            mlp_dim=disc_mlp_dim,
-            embed_dim=embed_dim,
-            n_heads=disc_n_heads,
-            drop_prob=drop_prob,
-            pad_idx=pad_idx
+
+        mlm = MaskedLanguageModel(
+            vocab_size=VOCAB_SIZE,
+            mask_id=mask_id,
+            no_mask_token_ids=[cls_id, sep_id, mask_id, pad_id],
+            select_prob=select_prob, # "Typically 15% of the tokens are masked out."
+            mask_prob=1,
+            randomize_prob=0,
         )
-        gen = ELECTRAModel(
+
+        # "We speculate that having too strong of a generator may pose a too-challenging task for the discriminator, preventing it from learning as effectively. In particular, the discriminator may have to use many of its parameters modeling the generator rather than the actual data distribution."
+        gen = Generator(
             vocab_size=vocab_size,
             n_layers=n_layers,
             hidden_dim=gen_hidden_dim,
@@ -121,7 +191,18 @@ class ELECTRA(nn.Module):
             embed_dim=embed_dim,
             n_heads=gen_n_heads,
             drop_prob=drop_prob,
-            pad_idx=pad_idx
+            pad_idx=pad_idx,
+            weight_sharing=True,
+        )
+        disc = Discriminator(
+            vocab_size=vocab_size,
+            n_layers=n_layers,
+            hidden_dim=disc_hidden_dim,
+            mlp_dim=disc_mlp_dim,
+            embed_dim=embed_dim,
+            n_heads=disc_n_heads,
+            drop_prob=drop_prob,
+            pad_idx=pad_idx,
         )
         self.tie_weights(gen=self.gen, disc=self.disc)
 
@@ -130,66 +211,73 @@ class ELECTRA(nn.Module):
         """
         Weight sharing
         """
+        # "We propose improving the efficiency of the pre-training by sharing weights
+        # between the generator and discriminator. We found it to be more efficient to have a small generator,
+        # in which case we only share the embeddings (both the token and positional embeddings)
+        # of the generator and discriminator."
         gen.token_embed = disc.token_embed
         gen.pos_embed = disc.pos_embed
 
 
     def forward():
-        BATCH_SIZE = 8
-        SEQ_LEN = 512
-        seq = torch.randint(low=0, high=VOCAB_SIZE, size=(BATCH_SIZE, SEQ_LEN))
-        sent1_len = random.randint(0, SEQ_LEN - 1)
-        seg_ids = torch.as_tensor([0] + [1] * (sent1_len - 1) + [0] + [2] * (SEQ_LEN - sent1_len - 1))
-        logits = gen(seq, seg_ids=seg_ids)
-
-        head = MaskedLanguageModelHead(vocab_size=VOCAB_SIZE, hidden_dim=gen_hidden_dim)
-        head(logits).shape
+        masked_token_ids, gt_token_ids = mlm(token_ids)
+        corrupted_token_ids = gen(masked_token_ids)
+        pred_token_ids = disc(corrupted_token_ids)
+        return pred_token_ids
 
 
-# ELECTRA-Small:
-    # `n_layers=12,
-    # disc_hidden_dim=256,
-    # gen_hidden_dim=64,
-    # disc_n_heads=4,
-    # gen_n_heads=1,
-    # disc_mlp_dim=1024,
-    # gen_mlp_dim=256,
-    # embed_dim=128,
-    # mask_prob=0.15`
-# ELECTRA-Base:
-    # `n_layers=12,
-    # disc_hidden_dim=768,
-    # gen_hidden_dim=256,
-    # disc_n_heads=12,
-    # gen_n_heads=4,
-    # disc_mlp_dim=3072,
-    # gen_mlp_dim=1024,
-    # embed_dim=768,
-    # mask_prob=0.15`
-# ELECTRA-Large:
-    # `n_layers=24,
-    # disc_hidden_dim=1024,
-    # gen_hidden_dim=256,
-    # disc_n_heads=16,
-    # gen_n_heads=4,
-    # disc_mlp_dim=4096,
-    # gen_mlp_dim=1024,
-    # embed_dim=1024,
-    # mask_prob=0.25`
+class ELECTRASMall(ELECTRA):
+    def __init__(self, vocab_size, select_prob=0.15):
+        super().__init__(
+            vocab_size=vocab_size,
+            n_layers=12,
+            gen_hidden_dim=64,
+            disc_hidden_dim=256,
+            gen_n_heads=1,
+            disc_n_heads=4,
+            gen_mlp_dim=256,
+            disc_mlp_dim=1024,
+            embed_dim=128,
+            select_prob=select_prob,
+        )
 
-# from transformers import AutoTokenizer
 
-# tokenizer = AutoTokenizer.from_pretrained('bert-base-uncased')
+class ELECTRABase(ELECTRA):
+    def __init__(self, vocab_size, select_prob=0.15):
+        super().__init__(
+            vocab_size=vocab_size,
+            n_layers=12,
+            gen_hidden_dim=256,
+            disc_hidden_dim=768,
+            gen_n_heads=4,
+            disc_n_heads=12,
+            gen_mlp_dim=1024,
+            disc_mlp_dim=3072,
+            embed_dim=768,
+            select_prob=select_prob,
+        )
 
-# tokenizer(
-#     [
-#         # ["I love NLP!", "I don't like NLP..."],
-#         "I love NLP!",
-#         # ["There is an apple.", "I want to eat it."]
-#     ],
-#     max_length=30,
-#     padding="max_length",
-#     truncation=True,
-#     return_tensors="pt"
-# )
-# # [101,  1045,  2293, 17953,  2361,   999,   102,  1045,  2123,  1005, 1056,  2066, 17953,  2361,  1012,  1012,  1012,  102]
+
+class ELECTRALarge(ELECTRA):
+    def __init__(self, vocab_size, select_prob=0.25):
+        super().__init__(
+            vocab_size=vocab_size,
+            n_layers=24,
+            gen_hidden_dim=256,
+            disc_hidden_dim=1024,
+            gen_n_heads=4,
+            disc_n_heads=16,
+            gen_mlp_dim=1024,
+            disc_mlp_dim=4096,
+            embed_dim=1024,
+            select_prob=select_prob,
+        )
+
+
+vocab_path = "/Users/jongbeomkim/Desktop/workspace/transformer_based_models/bert/vocab_example.json"
+tokenizer = prepare_bert_tokenizer(vocab_path=vocab_path)
+cls_id = tokenizer.token_to_id("[CLS]")
+sep_id = tokenizer.token_to_id("[SEP]")
+mask_id = tokenizer.token_to_id("[MASK]")
+pad_id = tokenizer.token_to_id("[PAD]")
+

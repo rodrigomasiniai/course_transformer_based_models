@@ -33,15 +33,13 @@ class TransformerBlock(nn.Module):
         self.hidden_dim = hidden_dim
         self.mlp_dim = mlp_dim
 
-        self.enc_stack = nn.ModuleList(
-            [
-                EncoderLayer(
-                    n_heads=n_heads, dim=hidden_dim, mlp_dim=mlp_dim, activ="gelu", drop_prob=DROP_PROB
-                )
-                for _
-                in range(n_layers)
-            ]
-        )
+        self.enc_stack = nn.ModuleList([
+            EncoderLayer(
+                n_heads=n_heads, dim=hidden_dim, mlp_dim=mlp_dim, activ="gelu", drop_prob=DROP_PROB
+            )
+            for _
+            in range(n_layers)
+        ])
 
     def forward(self, x, self_attn_mask):
         for enc_layer in self.enc_stack:
