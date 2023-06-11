@@ -30,7 +30,7 @@ def prepare_bert_tokenizer(vocab_path, corpus_files=None, post_processor=False):
         tokenizer.post_processor = TemplateProcessing(
             single="[CLS] $A [SEP]",
             pair="[CLS] $A [SEP] $B:1 [SEP]:1",
-            special_tokens=[("[CLS]", 1), ("[SEP]", 2),],
+            special_tokens=[("[CLS]", 1), ("[SEP]", 2)],
         )
     return tokenizer
 

@@ -45,7 +45,7 @@ class MaskedLanguageModel(object):
 
         # "If the $i$-th token is chosen, we replace the $i$-th token with
         # (1) the [MASK] token 80% of the time"
-        x.masked_fill_(mask=mask_mask, value=mask_id)
+        x.masked_fill_(mask=mask_mask, value=self.mask_id)
 
         # "(2) a random token 10% of the time
         # (3) the unchanged $i$-th token 10% of the time."
