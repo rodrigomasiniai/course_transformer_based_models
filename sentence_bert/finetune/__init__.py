@@ -5,10 +5,14 @@ from torch.utils.data import DataLoader
 
 from bert.tokenize import prepare_bert_tokenizer
 from bert.model import BERTBase
-from sentence_bert.model import SentenceBERTForClassification, SentenceBERTForRegression, SentenceBERTForContrastiveLearning
-from sentence_bert.sts_benchmark import STSbenchmarkDataset, STSbenchmarkCollator
-from sentence_bert.wiki_section import _get_wiki_section_dataset, WikiSectionCollator
-from sentence_bert.nli import _get_nli_dataset, NLICollator
+from sentence_bert.model import (
+    SentenceBERTForClassification,
+    SentenceBERTForRegression,
+    SentenceBERTForContrastiveLearning
+)
+from sentence_bert.finetune.sts_benchmark import STSbenchmarkDataset, STSbenchmarkCollator
+from sentence_bert.finetune.wikisection import _get_wikisection_dataset, WikiSectionCollator
+from sentence_bert.finetune.nli import _get_nli_dataset, NLICollator
 from sentence_bert.loss import CLS_LOSS_FN, REG_LOSS_FN, TRIP_LOSS_FN
 
 VOCAB_SIZE = 30_522
@@ -43,7 +47,7 @@ if __name__ == "__main__":
     trip_sbert = SentenceBERTForContrastiveLearning(embedder=bert_base)
     json_path = "/Users/jongbeomkim/Documents/datasets/wikisection_dataset_json/wikisection_en_city_train.json"
 
-    wiki_ds = _get_wiki_section_dataset(json_path=json_path, tokenizer=tokenizer)
+    wiki_ds = _get_wikisection_dataset(json_path=json_path, tokenizer=tokenizer)
     wiki_collator = WikiSectionCollator(tokenizer=tokenizer, max_len=MAX_LEN)
     wiki_dl = DataLoader(
         dataset=wiki_ds, batch_size=BATCH_SIZE, shuffle=True, drop_last=True, collate_fn=wiki_collator

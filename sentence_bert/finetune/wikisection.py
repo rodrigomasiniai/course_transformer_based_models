@@ -48,7 +48,7 @@ def _sample_negative_sentence(sec2sents, anchor_sec):
     return neg
 
 
-def _get_wiki_section_dataset(json_path, tokenizer):
+def _get_wikisection_dataset(json_path, tokenizer):
     with open(json_path, mode="r") as f:
         wiki_data = jsonable_encoder(json.load(f))
         sec2sents = _group_by_sections(wiki_data, tokenizer=tokenizer)
@@ -100,7 +100,7 @@ class WikiSectionCollator(object):
 #     tokenizer = prepare_bert_tokenizer(vocab_path=vocab_path)
 
 #     json_path = "/Users/jongbeomkim/Documents/datasets/wikisection_dataset_json/wikisection_en_city_train.json"
-#     wiki_ds = _get_wiki_section_dataset(json_path=json_path, tokenizer=tokenizer)
+#     wiki_ds = _get_wikisection_dataset(json_path=json_path, tokenizer=tokenizer)
 #     MAX_LEN = 512
 #     wiki_collator = WikiSectionCollator(tokenizer=tokenizer, max_len=MAX_LEN)
 #     BATCH_SIZE = 8

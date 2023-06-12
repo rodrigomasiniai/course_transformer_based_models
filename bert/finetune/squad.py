@@ -1,16 +1,26 @@
 # References
     # https://rajpurkar.github.io/SQuAD-explorer/
-    # we represent the input question and passage as a single packed sequence, with the question using the A embedding and the passage using the B embedding. We only introduce a start vector S 2 RH and an end vector E 2 RH during fine-tuning. The probability of word i being the start of the answer span is computed as a dot product between Ti and S followed by a softmax over all of the words in the paragsraph: Pi = eS Ti P j eS Tj . The analogous formula is used for the end of the answer span. The score of a candidate span from position i to position j is defined as S Ti + E Tj , and the maximum scoring span where j   i is used as a prediction. The training objective is the sum of the log-likelihoods of the correct start and end positions. We fine-tune for 3 epochs with a learning rate of 5e-5 and a batch size of 32. Table 2 shows top leaderboard entries as well
+    # https://github.com/alexaapo/BERT-based-pretrained-model-using-SQuAD-2.0-dataset/blob/main/Fine_Tuning_Bert.ipynb
+    # https://mccormickml.com/2020/03/10/question-answering-with-a-fine-tuned-BERT/
+
+# we represent the input question and passage as a single packed sequence,
+# with the question using the A embedding and the passage using the B embedding.
 
 # SQuAD 1.1, the previous version of the SQuAD dataset,
 # contains 100,000+ question-answer pairs on 500+ articles.
 # SQuAD2.0 combines the 100,000 questions in SQuAD1.1 with over 50,000 unanswerable questions
 # written adversarially by crowdworkers to look similar to answerable ones.
 
+import sys
+import torch
+import torch.nn as nn
+import torch.nn.functional as F
 import json
 from fastapi.encoders import jsonable_encoder
 # from pprint import pprint
 from tqdm.auto import tqdm
+
+torch.set_printoptions(precision=2, edgeitems=12, linewidth=sys.maxsize, sci_mode=True)
 
 
 def parse_squad(json_path):
@@ -35,3 +45,30 @@ def parse_squad(json_path):
     return data
 json_path = "/Users/jongbeomkim/Downloads/train-v2.0.json"
 data = parse_squad(json_path)
+data[0]
+
+class QuestionAnsweringHead(nn.Module):
+    def __init__(self, hidden_dim):
+        super().__init__()
+
+        # The training objective is the sum of the log-likelihoods of the correct start and end positions. We fine-tune for 3 epochs with a learning rate of 5e-5 and a batch size of 32. Table 2 shows top leaderboard entries as well
+        self.hidden_dim = hidden_dim
+
+        # "We only introduce a start vector $S \in \mathbb{R}^{H}$ and an end vector
+        # $E \in \mathbb{R}^{H}$ during fine-tuning."
+        self.proj = nn.Linear(hidden_dim, 2)
+
+    def forward(self, x):
+        # "The probability of word $i$ being the start of the answer span is computed
+        # as a dot product between $T_{i}$ and $S$ followed by a softmax over all of the words in the paragraph."
+        x = self.proj(x)
+        start_logit, end_logit = torch.split(x, split_size_or_sections=1, dim=2)
+        start_logit, end_logit = start_logit.squeeze(), end_logit.squeeze()
+        start_id, end_id = torch.argmax(start_logit, dim=1), torch.argmax(end_logit, dim=1)
+        return start_id, end_id
+head = QuestionAnsweringHead(hidden_dim=768)
+x = torch.randn((8, 512, 768))
+head(x)
+
+
+from transformers import BertForQuestionAnswering
