@@ -16,7 +16,7 @@ class DistilBERTBase(nn.Module):
         hidden_dim=768,
         mlp_dim=768 * 4,
         pad_idx=0,
-        DROP_PROB=DROP_PROB
+        drop_prob=DROP_PROB
     ):
         super().__init__()
 
@@ -31,9 +31,11 @@ class DistilBERTBase(nn.Module):
         self.token_embed = TokenEmbedding(vocab_size=vocab_size, embed_dim=hidden_dim, pad_idx=pad_idx)
         self.pos_embed = PositionEmbedding(embed_dim=hidden_dim)
 
-        self.drop = nn.Dropout(DROP_PROB)
+        self.drop = nn.Dropout(drop_prob)
 
-        self.tf_block = TransformerBlock(n_layers=n_layers, n_heads=n_heads, hidden_dim=hidden_dim, mlp_dim=mlp_dim)
+        self.tf_block = TransformerBlock(
+            n_layers=n_layers, n_heads=n_heads, hidden_dim=hidden_dim, mlp_dim=mlp_dim, drop_prob=drop_prob
+        )
         # The pooler are removed.
 
     def initialize(self):

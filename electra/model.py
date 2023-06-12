@@ -71,7 +71,9 @@ class Generator(nn.Module):
 
         self.dropout = nn.Dropout(drop_prob)
 
-        self.tf_block = TransformerBlock(n_layers=n_layers, n_heads=n_heads, hidden_dim=hidden_dim, mlp_dim=mlp_dim)
+        self.tf_block = TransformerBlock(
+            n_layers=n_layers, n_heads=n_heads, hidden_dim=hidden_dim, mlp_dim=mlp_dim, drop_prob=drop_prob
+        )
 
         self.mlm_head = MaskedLanguageModelHead(vocab_size=vocab_size, hidden_dim=hidden_dim)
 

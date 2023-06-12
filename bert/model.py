@@ -10,13 +10,13 @@ DROP_PROB = 0.1
 
 
 class TokenEmbedding(nn.Embedding):
-    def __init__(self, vocab_size, embed_dim, pad_idx=0):
-        super().__init__(num_embeddings=vocab_size, embedding_dim=embed_dim, padding_idx=pad_idx)
+    def __init__(self, vocab_size, embed_dim, pad_id=0):
+        super().__init__(num_embeddings=vocab_size, embedding_dim=embed_dim, padding_idx=pad_id)
 
 
 class SegmentEmbedding(nn.Embedding):
-    def __init__(self, embed_dim, pad_idx=0):
-        super().__init__(num_embeddings=2, embedding_dim=embed_dim, padding_idx=pad_idx)
+    def __init__(self, embed_dim, pad_id=0):
+        super().__init__(num_embeddings=2, embedding_dim=embed_dim, padding_idx=pad_id)
 
 
 class PositionEmbedding(PositionalEncoding):
@@ -25,7 +25,7 @@ class PositionEmbedding(PositionalEncoding):
 
 
 class TransformerBlock(nn.Module):
-    def __init__(self, n_layers, n_heads, hidden_dim, mlp_dim):
+    def __init__(self, n_layers, n_heads, hidden_dim, mlp_dim, attn_drop_prob, resid_drop_prob):
         super().__init__()
 
         self.n_layers = n_layers
@@ -35,10 +35,14 @@ class TransformerBlock(nn.Module):
 
         self.enc_stack = nn.ModuleList([
             EncoderLayer(
-                n_heads=n_heads, dim=hidden_dim, mlp_dim=mlp_dim, activ="gelu", drop_prob=DROP_PROB
+                n_heads=n_heads,
+                dim=hidden_dim,
+                mlp_dim=mlp_dim,
+                activ="gelu",
+                attn_drop_prob=attn_drop_prob,
+                resid_drop_prob=resid_drop_prob,
             )
-            for _
-            in range(n_layers)
+            for _ in range(n_layers)
         ])
 
     def forward(self, x, self_attn_mask):
@@ -55,8 +59,10 @@ class BERT(nn.Module):
         n_heads=12,
         hidden_dim=768,
         mlp_dim=768 * 4,
-        pad_idx=0,
-        drop_prob=DROP_PROB
+        pad_id=0,
+        embed_drop_prob=DROP_PROB,
+        attn_drop_prob=DROP_PROB,
+        resid_drop_prob=DROP_PROB
     ):
         super().__init__()
 
@@ -64,42 +70,52 @@ class BERT(nn.Module):
         self.n_layers = n_layers
         self.hidden_dim = hidden_dim
         self.n_heads = n_heads
-        self.pad_idx = pad_idx
+        self.pad_id = pad_id
+        self.embed_drop_prob = embed_drop_prob
+        self.attn_drop_prob = attn_drop_prob
+        self.resid_drop_prob = resid_drop_prob
 
-        self.token_embed = TokenEmbedding(vocab_size=vocab_size, embed_dim=hidden_dim, pad_idx=pad_idx)
-        self.seg_embed = SegmentEmbedding(embed_dim=hidden_dim, pad_idx=pad_idx)
+        self.token_embed = TokenEmbedding(vocab_size=vocab_size, embed_dim=hidden_dim, pad_id=pad_id)
+        self.seg_embed = SegmentEmbedding(embed_dim=hidden_dim, pad_id=pad_id)
         self.pos_embed = PositionEmbedding(embed_dim=hidden_dim)
 
-        self.drop = nn.Dropout(drop_prob)
+        self.enmbed_drop = nn.Dropout(embed_drop_prob)
 
-        self.tf_block = TransformerBlock(n_layers=n_layers, n_heads=n_heads, hidden_dim=hidden_dim, mlp_dim=mlp_dim)
+        self.tf_block = TransformerBlock(
+            n_layers=n_layers,
+            n_heads=n_heads,
+            hidden_dim=hidden_dim,
+            mlp_dim=mlp_dim,
+            attn_drop_prob=attn_drop_prob,
+            resid_drop_prob=resid_drop_prob,
+        )
 
     def forward(self, seq, seg_ids):
         x = self.token_embed(seq)
         x = self.pos_embed(x)
         x += self.seg_embed(seg_ids)
-        x = self.drop(x)
+        x = self.enmbed_drop(x)
 
-        pad_mask = _get_pad_mask(seq=seq, pad_idx=self.pad_idx)
+        pad_mask = _get_pad_mask(seq=seq, pad_id=self.pad_id)
         x = self.tf_block(x, self_attn_mask=pad_mask)
         return x
 
 
 # 110M parameters
 class BERTBase(BERT):
-    def __init__(self, vocab_size, pad_idx=0):
-        super().__init__(vocab_size=vocab_size, pad_idx=pad_idx)
+    def __init__(self, vocab_size, pad_id=0):
+        super().__init__(vocab_size=vocab_size, pad_id=pad_id)
 
 
 # 340M parameters
 class BERTLarge(BERT):
-    def __init__(self, vocab_size, pad_idx=0):
+    def __init__(self, vocab_size, pad_id=0):
         super().__init__(
             vocab_size=vocab_size,
             n_layers=24,
             n_heads=16,
             hidden_dim=1024,
-            pad_idx=pad_idx
+            pad_id=pad_id
         )
 
 
@@ -126,11 +142,11 @@ class MaskedLanguageModelHead(nn.Module):
         self.hidden_dim = hidden_dim
 
         self.cls_proj = nn.Linear(hidden_dim, vocab_size)
-        self.drop = nn.Dropout(drop_prob)
+        self.head_drop = nn.Dropout(drop_prob)
 
     def forward(self, x):
         x = self.cls_proj(x)
-        x = self.drop(x)
+        x = self.head_drop(x)
         return x
 
 
@@ -141,12 +157,12 @@ class NextSentencePredictionHead(nn.Module):
         self.hidden_dim = hidden_dim
 
         self.cls_proj = nn.Linear(hidden_dim, 2)
-        self.drop = nn.Dropout(drop_prob)
+        self.head_drop = nn.Dropout(drop_prob)
 
     def forward(self, x):
         x = x[:, 0, :]
         x = self.cls_proj(x)
-        x = self.drop(x)
+        x = self.head_drop(x)
         return x
 
 
