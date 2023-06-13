@@ -2,6 +2,7 @@
     # https://rajpurkar.github.io/SQuAD-explorer/
     # https://github.com/alexaapo/BERT-based-pretrained-model-using-SQuAD-2.0-dataset/blob/main/Fine_Tuning_Bert.ipynb
     # https://mccormickml.com/2020/03/10/question-answering-with-a-fine-tuned-BERT/
+    # https://huggingface.co/learn/nlp-course/chapter7/7?fw=tf
 
 # we represent the input question and passage as a single packed sequence,
 # with the question using the A embedding and the passage using the B embedding.
@@ -57,35 +58,65 @@ class SQuADForBERT(Dataset):
         self,
         json_path,
         tokenizer,
+        stride=None,
         max_len=MAX_LEN,
     ):
+        if stride is None:
+            stride = max_len // 2
+        
+        cls_id = tokenizer.token_to_id("[CLS]")
+        sep_id = tokenizer.token_to_id("[SEP]")
+        pad_id = tokenizer.token_to_id("[PAD]")
+        unk_id = tokenizer.token_to_id("[UNK]")
+        
         json_path = "/Users/jongbeomkim/Documents/datasets/train-v2.0.json"
         data = parse_squad(json_path)
 
-
+        new_data = list()
         for line in data:
             que_token_ids = tokenizer.encode(line["question"]).ids
             ctx_encoded = tokenizer.encode(line["context"])
-            ctx_tokens = ctx_encoded.tokens
             ctx_token_ids = ctx_encoded.ids
-            ctx_offsets = ctx_encoded.offsets
 
-            # ctx_tokens[: 30]
-            # ctx_offsets[: 30]
-            for id_, (s, e) in enumerate(ctx_offsets):
-                if s <= line["answer"]["start_index"] < e:
-                    start_id = id_
-                if s < line["answer"]["end_index"] <= e:
-                    end_id = id_
-            start_id, end_id
+            if (line["answer"]["start_index"], line["answer"]["end_index"]) == (0, 0):
+                (start_id, end_id) = (0, 0)
+            else:
+                ctx_offsets = ctx_encoded.offsets
 
-            
-            end_id - start_id + 1
-            if len(que_token_ids) + len(ctx_token_ids) + 3 > max_len:
-                
-                break
+                for id_, (s, e) in enumerate(ctx_offsets):
+                    if s <= line["answer"]["start_index"] < e:
+                        # start_id = id_ + len_que + 2
+                        start_id = id_
+                    if s < line["answer"]["end_index"] <= e:
+                        # end_id = id_ + len_que + 3
+                        end_id = id_ + 1
 
+            len_que = len(que_token_ids)
+            len_ctx = len(ctx_token_ids)
+            start_id += len_que + 2
+            end_id += len_que + 2
 
+            if len_que + len_ctx + 3 > max_len:
+                for i in range(0, len_ctx // 2, stride):
+                    token_ids = [cls_id] + que_token_ids + [sep_id] + ctx_token_ids[i: i + max_len - len_que - 3] + [sep_id]
+                    if not (i <= start_id or end_id < i + max_len - len_que - 3):
+                        (start_id, end_id) = (0, 0)
+                    else:
+                        start_id -= i
+                        end_id -= i
+
+                    new_data.append({"token_indices": token_ids, "start_index": start_id, "end_index": end_id})
+            else:
+                token_ids = [cls_id] + que_token_ids + [sep_id] + ctx_token_ids + [sep_id]
+                # tokenizer.decode(token_ids[start_id: end_id]), line["context"][line["answer"]["start_index"]: line["answer"]["end_index"]]
+
+                new_data.append({"token_indices": token_ids, "start_index": start_id, "end_index": end_id})
+
+        for i in range(10):
+            tokenizer.decode(new_data[i]["token_indices"][new_data[i]["start_index"]: new_data[i]["end_index"]])
+        # for i in range(30):
+        i = 1
+        data[i]["context"][data[i]["answer"]["start_index"]: data[0]["answer"]["end_index"]]
 
 
 
