@@ -34,12 +34,12 @@ class BookCorpusForBERT(Dataset):
         self.pad_id = tokenizer.token_to_id("[PAD]")
         self.unk_id = tokenizer.token_to_id("[UNK]")
 
-        self.corpus = self._prepare_corpus()
-        self.data = self._prepare_data(self.corpus)
+        self.corpus = self._get_corpus()
+        self.data = self._get_data(self.corpus)
     
-    def _prepare_corpus(self):
+    def _get_corpus(self):
         corpus = list()
-        for doc_path in tqdm(list(Path(data_dir).glob("**/*.txt"))):
+        for doc_path in tqdm(list(Path(self.data_dir).glob("**/*.txt"))):
             for parag in open(doc_path, mode="r", encoding="utf-8"):
                 parag = parag.strip()
                 if parag == "":
@@ -62,7 +62,7 @@ class BookCorpusForBERT(Dataset):
         token_ids += [self.pad_id] * (self.max_len - len(token_ids))
         return token_ids
 
-    def _prepare_data(self, corpus):
+    def _get_data(self, corpus):
         data = list()
 
         for id1 in range(len(corpus) - 1):

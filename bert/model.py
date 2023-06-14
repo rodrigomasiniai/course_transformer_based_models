@@ -166,6 +166,26 @@ class NextSentencePredictionHead(nn.Module):
         return x
 
 
+class QuestionAnsweringHead(nn.Module):
+    def __init__(self, hidden_dim):
+        super().__init__()
+
+        self.hidden_dim = hidden_dim
+
+        # "We only introduce a start vector $S \in \mathbb{R}^{H}$ and an end vector
+        # $E \in \mathbb{R}^{H}$ during fine-tuning."
+        self.proj = nn.Linear(hidden_dim, 2)
+
+    def forward(self, x):
+        # "The probability of word $i$ being the start of the answer span is computed
+        # as a dot product between $T_{i}$ and $S$ followed by a softmax over all of the words in the paragraph."
+        x = self.proj(x)
+        start_logit, end_logit = torch.split(x, split_size_or_sections=1, dim=2)
+        start_logit, end_logit = start_logit.squeeze(), end_logit.squeeze()
+        start_id, end_id = torch.argmax(start_logit, dim=1), torch.argmax(end_logit, dim=1)
+        return start_id, end_id
+
+
 if __name__ == "__main__":
     HIDDEN_DIM = 768
     VOCAB_SIZE = 30_522

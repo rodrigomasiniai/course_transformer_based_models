@@ -27,7 +27,7 @@ class BookCorpusForRoBERTa(Dataset):
         mode: Literal["segment_pair", "sentence_pair", "full_sentences", "doc_sentences"]="doc_sentences"
     ):
         assert mode in ["segment_pair", "sentence_pair", "full_sentences", "doc_sentences"],\
-        "The argument `mode` should be one of `'segment_pair'`, `'sentence_pair'`, 'full_sentences', and 'doc_sentences'."
+            "The argument `mode` should be one of `'segment_pair'`, `'sentence_pair'`, 'full_sentences', and 'doc_sentences'."
 
         self.data_dir = data_dir
         self.tokenizer = tokenizer
@@ -42,16 +42,16 @@ class BookCorpusForRoBERTa(Dataset):
         self.unk_id = tokenizer.token_to_id("[UNK]")
 
         if mode == "segment_pair":
-            self.corpus = self._prepare_corpus(perform_sbd=False)
+            self.corpus = self._get_corpus(perform_sbd=False)
         else:
-            self.corpus = self._prepare_corpus(perform_sbd=True)
-        self.data = self._prepare_data(self.corpus)
+            self.corpus = self._get_corpus(perform_sbd=True)
+        self.data = self._get_data(self.corpus)
 
     def _disambiguate_sentence_boundary(self, text):
         segmented = self.segmentor.segment(text)
         return [i.strip() for i in segmented]
     
-    def _prepare_corpus(self, perform_sbd):
+    def _get_corpus(self, perform_sbd):
         corpus = list()
         for doc_path in tqdm(list(Path(data_dir).glob("**/*.txt"))):
             for parag in open(doc_path, mode="r", encoding="utf-8"):
@@ -95,7 +95,7 @@ class BookCorpusForRoBERTa(Dataset):
             token_ids += [self.pad_id] * (self.max_len - len(token_ids))
         return token_ids
 
-    def _prepare_data(self, corpus):
+    def _get_data(self, corpus):
         data = list()
 
         # "Each input has a pair of segments, which can each contain multiple natural sentences,
@@ -226,8 +226,8 @@ if __name__ == "__main__":
     data_dir = "/Users/jongbeomkim/Documents/datasets/bookcorpus_subset"
     vocab_path = "/Users/jongbeomkim/Desktop/workspace/transformer_based_models/bert/vocab_example.json"
     tokenizer = prepare_bert_tokenizer(vocab_path=vocab_path)
-    ds = BookCorpusForRoBERTa(data_dir=data_dir, tokenizer=tokenizer, max_len=MAX_LEN, mode="full_sentences")
-    dl = DataLoader(dataset=ds, batch_size=BATCH_SIZE, shuffle=True, drop_last=True)
-    for batch, token_ids in enumerate(dl, start=1):
+    bcorpus_ds = BookCorpusForRoBERTa(data_dir=data_dir, tokenizer=tokenizer, max_len=MAX_LEN, mode="full_sentences")
+    bcorpus_dl = DataLoader(dataset=bcorpus_ds, batch_size=BATCH_SIZE, shuffle=True, drop_last=True)
+    for batch, token_ids in enumerate(bcorpus_dl, start=1):
     # for batch, (token_ids, seg_ids, is_next) in enumerate(dl, start=1):
         token_ids
