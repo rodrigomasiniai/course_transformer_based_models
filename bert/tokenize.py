@@ -7,6 +7,7 @@ from tokenizers.normalizers import NFD, Lowercase, StripAccents
 from tokenizers.pre_tokenizers import Whitespace
 from tokenizers.processors import TemplateProcessing
 from tokenizers.trainers import WordPieceTrainer
+from tokenizers import decoders
 from pathlib import Path
 
 VOCAB_SIZE = 30_522
@@ -25,6 +26,7 @@ def prepare_bert_tokenizer(vocab_path, corpus_files=None, post_processor=False):
         tokenizer.save(vocab_path)
 
     tokenizer = Tokenizer.from_file(vocab_path)
+    tokenizer.decoder = decoders.WordPiece()
 
     if post_processor:
         tokenizer.post_processor = TemplateProcessing(
