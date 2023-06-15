@@ -1,6 +1,7 @@
 # References
     # https://rowanzellers.com/swag/
     # https://github.com/rowanz/swagaf/tree/master/data
+    # https://github.com/huggingface/transformers/blob/main/examples/legacy/run_swag.py
 
 # "Given a partial description like 'she opened the hood of the car,' humans can reason about the situation
 # and anticipate what might come next ('then, she examined the engine').
