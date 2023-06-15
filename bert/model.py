@@ -186,6 +186,21 @@ class QuestionAnsweringHead(nn.Module):
         return start_id, end_id
 
 
+class SingleSequenceChoiceHead(nn.Module):
+    def __init__(self, hidden_dim):
+        super().__init__()
+
+        self.hidden_dim = hidden_dim
+
+        self.proj = nn.Linear(hidden_dim, 1)
+
+    def forward(self, x):
+        x = self.proj(x)
+        x = x.squeeze()
+        x = torch.argmax(x, dim=1)
+        return x
+
+
 if __name__ == "__main__":
     HIDDEN_DIM = 768
     VOCAB_SIZE = 30_522

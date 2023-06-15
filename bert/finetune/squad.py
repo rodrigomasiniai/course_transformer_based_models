@@ -172,9 +172,9 @@ if __name__ == "__main__":
     qa_head = QuestionAnsweringHead(hidden_dim=768)
     # x = torch.randn((8, 512, 768))
 
-    json_path = "/Users/jongbeomkim/Documents/datasets/train-v2.0.json"
     vocab_path = "/Users/jongbeomkim/Desktop/workspace/transformer_based_models/bert/vocab_example.json"
     tokenizer = prepare_bert_tokenizer(vocab_path=vocab_path)
+    json_path = "/Users/jongbeomkim/Documents/datasets/train-v2.0.json"
     squad_ds = SQuADForBERT(json_path=json_path, tokenizer=tokenizer, max_len=MAX_LEN)
     BATCH_SIZE = 8
     squad_dl = DataLoader(dataset=squad_ds, batch_size=BATCH_SIZE, shuffle=True, drop_last=True)
@@ -185,6 +185,9 @@ if __name__ == "__main__":
         pred_end_id, gt_end_id
 
 
-    # The probability space for the start and end answer span positions is extended to include the position of the [CLS] token. For prediction, we compare the score of the no-answer span: snull = S C + E C to the score of the best non-null span
+    # The probability space for the start and end answer span positions is extended to include the position of the [CLS] token. For prediction, we compare the score of the no-answer span: snull = S C + E C
+    # to the score of the best non-null span s^i;j = maxj iS Ti + E Tj . We predict a non-null answer
+    # when s^i;j > snull +   , where the threshold is selected on the dev set to maximize F1.
+
     # The training objective is the sum of the log-likelihoods of the correct start and end positions.
     # We fine-tune for 3 epochs with a learning rate of 5e-5 and a batch size of 32. Table 2 shows top leaderboard entries as well
