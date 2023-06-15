@@ -186,7 +186,7 @@ class QuestionAnsweringHead(nn.Module):
         return start_id, end_id
 
 
-class SingleSequenceChoiceHead(nn.Module):
+class MultipleChoiceHead(nn.Module):
     def __init__(self, hidden_dim):
         super().__init__()
 
