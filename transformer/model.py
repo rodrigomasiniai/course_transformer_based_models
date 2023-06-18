@@ -3,11 +3,14 @@
     # https://github.com/huggingface/pytorch-image-models/blob/624266148d8fa5ddb22a6f5e523a53aaf0e8a9eb/timm/models/vision_transformer.py#L216
     # https://wikidocs.net/31379
 
+import sys
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from einops import rearrange
 from typing import Literal
+
+torch.set_printoptions(precision=3, edgeitems=4, linewidth=sys.maxsize)
 
 D_MODEL = 512
 N_HEADS = 8
@@ -98,12 +101,32 @@ class MultiHeadAttention(nn.Module):
         return x
 
 
+class ResidualConnection(nn.Module):
+    def __init__(self, dim, drop_prob=DROP_PROB):
+        super().__init__()
+
+        self.dim = dim
+        self.drop_prob = drop_prob
+
+        self.resid_drop = nn.Dropout(drop_prob)
+        self.norm = nn.LayerNorm(dim)
+
+    def forward(self, x, sublayer):
+        out = sublayer(x) # "Multi-Head Attention", "Masked Multi-Head Attention" or "Feed Forward"
+            # in "Figure 1" of the paper
+        out = self.resid_drop(out) # "We apply dropout to the output of each sub-layer,
+            # before it is added to the sub-layer input and normalized."
+        x += out # "Add"
+        x = self.norm(x) # "& Norm"
+        return x
+
+
 class PositionwiseFeedForward(nn.Module):
     def __init__(self, dim, mlp_dim, activ: Literal["relu", "gelu"]="relu", drop_prob=DROP_PROB):
         super().__init__()
 
         assert activ in ["relu", "gelu"],\
-            """`activ` must be one of (`"relu"`, `"gelu"`)"""
+            """The argument `activ` must be one of (`"relu"`, `"gelu"`)"""
 
         self.dim = dim
         self.mlp_dim = mlp_dim
@@ -129,7 +152,7 @@ class PositionwiseFeedForward(nn.Module):
 
 
 class EncoderLayer(nn.Module):
-    def __init__(self, n_heads, dim, mlp_dim, activ, attn_drop_prob=DROP_PROB, resid_drop_prob=DROP_PROB):
+    def __init__(self, dim, n_heads, mlp_dim, activ, attn_drop_prob=DROP_PROB, resid_drop_prob=DROP_PROB):
         super().__init__()
 
         self.n_heads = n_heads
@@ -137,24 +160,13 @@ class EncoderLayer(nn.Module):
         self.mlp_dim = mlp_dim
 
         self.self_attn = MultiHeadAttention(dim=dim, n_heads=n_heads, drop_prob=attn_drop_prob)
-        self.norm1 = nn.LayerNorm(dim)
-
-        self.ff = PositionwiseFeedForward(dim=dim, mlp_dim=mlp_dim, activ=activ)
-        self.norm2 = nn.LayerNorm(dim)
-
-        self.resid_drop = nn.Dropout(resid_drop_prob)
+        self.attn_resid_conn = ResidualConnection(dim=dim, drop_prob=resid_drop_prob)
+        self.feed_forward = PositionwiseFeedForward(dim=dim, mlp_dim=mlp_dim, activ=activ)
+        self.ff_resid_conn = ResidualConnection(dim=dim, drop_prob=resid_drop_prob)
 
     def forward(self, x, mask=None):
-        attn_out = self.self_attn(q=x, k=x, v=x, mask=mask) # "Multi-Head Attention" in "Figure 1" of the paper
-        attn_out = self.resid_drop(attn_out) # "We apply dropout to the output of each sub-layer,
-            # before it is added to the sub-layer input and normalized."
-        x += attn_out # "Add"
-        x = self.norm1(x) # "& Norm"
-
-        ff_out = self.ff(x) # "Feed Forward"
-        ff_out = self.resid_drop(ff_out)
-        x += ff_out # "Add"
-        x = self.norm2(x) # "& Norm"
+        x = self.attn_resid_conn(x=x, sublayer=lambda x: self.self_attn(q=x, k=x, v=x, mask=mask))
+        x = self.ff_resid_conn(x=x, sublayer=self.feed_forward)
         return x
 
 
@@ -210,34 +222,23 @@ class DecoderLayer(nn.Module):
 
         self.n_heads = n_heads
         self.dim = dim
+        self.mlp_dim = mlp_dim
 
         self.self_attn = MultiHeadAttention(dim=dim, n_heads=n_heads, drop_prob=attn_drop_prob)
-        self.norm1 = nn.LayerNorm(dim)
+        self.self_attn_resid_conn = ResidualConnection(dim=dim, drop_prob=resid_drop_prob)
+        self.enc_dec_attn = MultiHeadAttention(dim=dim, n_heads=n_heads, drop_prob=attn_drop_prob)
+        self.enc_dec_attn_resid_conn = ResidualConnection(dim=dim, drop_prob=resid_drop_prob)
+        self.feed_forward = PositionwiseFeedForward(dim=dim, mlp_dim=mlp_dim, activ=activ)
+        self.ff_resid_conn = ResidualConnection(dim=dim, drop_prob=resid_drop_prob)
 
-        self.enc_dec_attn = MultiHeadAttention(dim=dim, n_heads=n_heads)
-        self.norm2 = nn.LayerNorm(dim)
-
-        self.ff = PositionwiseFeedForward(dim=dim, mlp_dim=mlp_dim, activ=activ)
-        self.norm3 = nn.LayerNorm(dim)
-
-        self.resid_drop = nn.Dropout(resid_drop_prob)
-
-    def forward(self, x, enc_output, self_attn_mask, enc_dec_mask):
-        attn_out = self.self_attn(q=x, k=x, v=x, mask=self_attn_mask) # "Masked Multi-Head Attention"
-            # in "Figure 1" of the paper
-        attn_out = self.resid_drop(attn_out)
-        x += attn_out # "Add"
-        x = self.norm1(x) # "& Norm"
-
-        attn_out = self.enc_dec_attn(q=x, k=enc_output, v=enc_output, mask=enc_dec_mask) # "Multi-Head Attention"
-        attn_out = self.resid_drop(attn_out)
-        x += attn_out # "Add"
-        x = self.norm2(x) # "& Norm"
-
-        ff_out = self.ff(x) # "Feed Forward"
-        ff_out = self.resid_drop(ff_out)
-        x += ff_out # "Add"
-        x = self.norm3(x) # "& Norm"
+    def forward(self, x, enc_out, self_attn_mask, enc_dec_mask):
+        x = self.self_attn_resid_conn(
+            x=x, sublayer=lambda x: self.self_attn(q=x, k=x, v=x, mask=self_attn_mask)
+        )
+        x = self.enc_dec_attn_resid_conn(
+            x=x, sublayer=lambda x: self.enc_dec_attn(q=x, k=enc_out, v=enc_out, mask=enc_dec_mask)
+        )
+        x = self.ff_resid_conn(x=x, sublayer=self.feed_forward)
         return x
 
 
@@ -279,14 +280,12 @@ class Decoder(nn.Module):
             ]
         )
         self.linear = nn.Linear(dim, trg_vocab_size)
-        # self.softmax = nn.Softmax(dim=-1)
 
-    def forward(self, x, enc_output, self_attn_mask=None, enc_dec_mask=None):
+    def forward(self, x, enc_out, self_attn_mask=None, enc_dec_mask=None):
         x = self.input(x)
         for dec_layer in self.dec_stack:
-            x = dec_layer(x, enc_output=enc_output, self_attn_mask=self_attn_mask, enc_dec_mask=enc_dec_mask)
+            x = dec_layer(x, enc_out=enc_out, self_attn_mask=self_attn_mask, enc_dec_mask=enc_dec_mask)
         x = self.linear(x)
-        # x = self.softmax(x)
         x = F.softmax(x, dim=-1)
         return x
 
@@ -361,20 +360,19 @@ class Transformer(nn.Module):
         self.dec.input.embed.weight = self.enc.input.embed.weight
         self.dec.linear.weight = self.dec.input.embed.weight
 
-
     def forward(self, src_seq, trg_seq):
         src_pad_mask = _get_pad_mask(seq=src_seq, pad_id=self.src_pad_id)
         trg_pad_mask = _get_pad_mask(seq=trg_seq, pad_id=self.trg_pad_id)
         trg_subseq_mask = _get_subsequent_info_mask(src_seq_len=self.src_seq_len, trg_seq_len=self.trg_seq_len)
 
-        enc_output = self.enc(src_seq, self_attn_mask=src_pad_mask)
-        dec_output = self.dec(
+        enc_out = self.enc(src_seq, self_attn_mask=src_pad_mask)
+        dec_out = self.dec(
             trg_seq,
-            enc_output=enc_output,
+            enc_out=enc_out,
             self_attn_mask=trg_pad_mask,
             enc_dec_mask=(trg_pad_mask | trg_subseq_mask) # `&` or `|`??
         )
-        return dec_output
+        return dec_out
 
 
 if __name__ == "__main__":
@@ -394,5 +392,5 @@ if __name__ == "__main__":
 
     src_seq = torch.randint(low=0, high=VOCAB_SIZE, size=(BATCH_SIZE, SEQ_LEN))
     trg_seq = torch.randint(low=0, high=VOCAB_SIZE, size=(BATCH_SIZE, SEQ_LEN))
-    output = transformer(src_seq=src_seq, trg_seq=trg_seq)
-    print(output.shape)
+    logit = transformer(src_seq=src_seq, trg_seq=trg_seq)
+    print(logit.shape)

@@ -4,7 +4,7 @@
 import torch
 import torch.nn as nn
 
-from transformer.model import PositionalEncoding, EncoderLayer, _get_pad_mask
+from transformer.model import PositionalEncoding, MultiHeadAttention, PositionwiseFeedForward, _get_pad_mask
 
 DROP_PROB = 0.1
 
@@ -24,6 +24,43 @@ class PositionEmbedding(PositionalEncoding):
         super().__init__(dim=embed_dim)
 
 
+class ResidualConnection(nn.Module):
+    def __init__(self, dim, drop_prob=DROP_PROB):
+        super().__init__()
+
+        self.dim = dim
+        self.drop_prob = drop_prob
+
+        self.resid_drop = nn.Dropout(drop_prob)
+        self.norm = nn.LayerNorm(dim)
+
+    def forward(self, x, sublayer):
+        out = self.norm(x)
+        out = sublayer(out)
+        out = self.resid_drop(out)
+        x += out
+        return x
+
+
+class TransformerLayer(nn.Module):
+    def __init__(self, dim, n_heads, mlp_dim, attn_drop_prob=DROP_PROB, resid_drop_prob=DROP_PROB):
+        super().__init__()
+
+        self.n_heads = n_heads
+        self.dim = dim
+        self.mlp_dim = mlp_dim
+
+        self.self_attn = MultiHeadAttention(dim=dim, n_heads=n_heads, drop_prob=attn_drop_prob)
+        self.attn_resid_conn = ResidualConnection(dim=dim, drop_prob=resid_drop_prob)
+        self.feed_forward = PositionwiseFeedForward(dim=dim, mlp_dim=mlp_dim, activ="gelu")
+        self.ff_resid_conn = ResidualConnection(dim=dim, drop_prob=resid_drop_prob)
+
+    def forward(self, x, mask=None):
+        x = self.attn_resid_conn(x=x, sublayer=lambda x: self.self_attn(q=x, k=x, v=x, mask=mask))
+        x = self.ff_resid_conn(x=x, sublayer=self.feed_forward)
+        return x
+
+
 class TransformerBlock(nn.Module):
     def __init__(self, n_layers, n_heads, hidden_dim, mlp_dim, attn_drop_prob, resid_drop_prob):
         super().__init__()
@@ -34,11 +71,10 @@ class TransformerBlock(nn.Module):
         self.mlp_dim = mlp_dim
 
         self.enc_stack = nn.ModuleList([
-            EncoderLayer(
+            TransformerLayer(
                 n_heads=n_heads,
                 dim=hidden_dim,
                 mlp_dim=mlp_dim,
-                activ="gelu",
                 attn_drop_prob=attn_drop_prob,
                 resid_drop_prob=resid_drop_prob,
             )
