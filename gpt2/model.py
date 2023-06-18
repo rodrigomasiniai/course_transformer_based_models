@@ -1,9 +1,13 @@
 # "Layer normalization was moved to the input of each sub-block."
 # An additional layer normalization was added after the final self-attention block. A modified initialization which accounts
+# "A modified initialization which accounts for the accumulation on the residual path with model depth is used."
+# "We scale the weights of residual layers at initialization by a factor of $1 / \sqrt{N}$ where $N$ is the number of residual layers."
 
-# "A modified initialization which accounts for the accumulation on the residual path with model depth is used.
-# We scale the weights of residual layers at initialization by a factor of $1 / \sqrt{N}$ where $N$ is the number of residual layers."
-
+import sys
+import torch
+import torch.nn as nn
+import torch.nn.functional as F
+from bert.model import ResidualConnection
 
 
 MAX_LEN = 1024 # "We also increase the context size from 512 to 1024 tokens

@@ -3,11 +3,9 @@
     # https://paul-hyun.github.io/gpt-01/?fbclid=IwAR3jaAPdcWBIkShNDr-NIXE5JCfw-UvoQ2h000r5qnSBj8kjrY4ax1jDeM8
     # https://gaussian37.github.io/dl-pytorch-lr_scheduler/
 
-
 # Model specifications Our model largely follows the original transformer work [62]. We trained a 12-layer decoder-only transformer with masked self-attention heads (768 dimensional states and 12 attention heads). For the position-wise feed-forward networks, we used 3072 dimensional inner states. We used the Adam optimization scheme [27] with a max learning rate of 2.5e-4. The learning rate was increased linearly from zero over the first 2000 updates and annealed to 0 using a cosine schedule.
 # Since layernorm [2] is used extensively throughout the model, a simple weight initialization of N(0; 0:02) was sufficient.
 # We use the ftfy library2 to clean the raw text in BooksCorpus, standardize some punctuation and whitespace, and use the spaCy tokenizer.3
-
 
 # We also employed a modified version of L2 regularization proposed in [37], with w = 0:01 on all non bias or gain weights.
 
@@ -16,7 +14,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-from transformer.model import MultiHeadAttention, PositionwiseFeedForward, _get_pad_mask
+from transformer.model import ResidualConnection, MultiHeadAttention, PositionwiseFeedForward, _get_pad_mask
 from bert.model import TokenEmbedding
 
 torch.set_printoptions(precision=3, edgeitems=4, linewidth=sys.maxsize)
@@ -45,50 +43,42 @@ class LearnedPositionalEmbedding(nn.Module):
         return x
 
 
-class DecoderLayer(nn.Module):
-    def __init__(self, n_heads, dim, mlp_dim, activ, attn_drop_prob=DROP_PROB, resid_drop_prob=DROP_PROB):
+class TransformerLayer(nn.Module):
+    def __init__(self, dim, n_heads, mlp_dim, attn_drop_prob=DROP_PROB, resid_drop_prob=DROP_PROB):
         super().__init__()
 
-        self.n_heads = n_heads
         self.dim = dim
+        self.n_heads = n_heads
+        self.mlp_dim = mlp_dim
+        self.attn_drop_prob = attn_drop_prob
+        self.resid_drop_prob = resid_drop_prob
 
         self.self_attn = MultiHeadAttention(dim=dim, n_heads=n_heads, drop_prob=attn_drop_prob)
-        self.norm1 = nn.LayerNorm(dim)
-
-        self.ff = PositionwiseFeedForward(dim=dim, mlp_dim=mlp_dim, activ=activ)
-        self.norm2 = nn.LayerNorm(dim)
-
-        self.resid_drop = nn.Dropout(resid_drop_prob)
+        self.attn_resid_conn = ResidualConnection(dim=dim, drop_prob=resid_drop_prob)
+        # "For the activation function, we used the Gaussian Error Linear Unit (GELU)."
+        self.feed_forward = PositionwiseFeedForward(dim=dim, mlp_dim=mlp_dim, activ="gelu")
+        self.ff_resid_conn = ResidualConnection(dim=dim, drop_prob=resid_drop_prob)
 
     def forward(self, x, self_attn_mask):
-        attn_out = self.self_attn(q=x, k=x, v=x, mask=self_attn_mask) # "Masked Multi-Head Attention"
-            # in "Figure 1" of the paper
-        attn_out = self.resid_drop(attn_out)
-        x += attn_out # "Add"
-        x = self.norm1(x) # "& Norm"
-
-        ff_out = self.ff(x) # "Feed Forward"
-        ff_out = self.resid_drop(ff_out)
-        x += ff_out # "Add"
-        x = self.norm2(x) # "& Norm"
+        x = self.attn_resid_conn(x=x, sublayer=lambda x: self.self_attn(q=x, k=x, v=x, mask=self_attn_mask))
+        x = self.ff_resid_conn(x=x, sublayer=self.feed_forward)
         return x
 
 
 class TransformerBlock(nn.Module):
-    def __init__(self, n_layers, n_heads, hidden_dim, mlp_dim, attn_drop_prob, resid_drop_prob):
+    def __init__(self, n_layers, hidden_dim, n_heads, mlp_dim, attn_drop_prob, resid_drop_prob):
         super().__init__()
 
         self.n_layers = n_layers
-        self.n_heads = n_heads
         self.hidden_dim = hidden_dim
+        self.n_heads = n_heads
         self.mlp_dim = mlp_dim
 
         self.dec_stack = nn.ModuleList([
-            DecoderLayer(
-                n_heads=n_heads,
+            TransformerLayer(
                 dim=hidden_dim,
+                n_heads=n_heads,
                 mlp_dim=mlp_dim,
-                activ="gelu", # "For the activation function, we used the Gaussian Error Linear Unit (GELU)."
                 attn_drop_prob=attn_drop_prob, # "Attention dropout"
                 resid_drop_prob=resid_drop_prob, # "Residual dropout"
             )
@@ -105,10 +95,10 @@ class GPT(nn.Module):
     def __init__(
         self,
         vocab_size,
-        max_len=512,
         n_layers=12,
         hidden_dim=768,
         n_heads=12,
+        max_len=512,
         pad_id=0,
         embed_drop_prob=DROP_PROB,
         attn_drop_prob=DROP_PROB,
@@ -117,10 +107,10 @@ class GPT(nn.Module):
         super().__init__()
 
         self.vocab_size = vocab_size
-        self.max_len = max_len
         self.n_layers = n_layers
         self.hidden_dim = hidden_dim
         self.n_heads = n_heads
+        self.max_len = max_len
         self.pad_id = pad_id
         self.embed_drop_prob = embed_drop_prob
         self.attn_drop_prob = attn_drop_prob
@@ -133,8 +123,8 @@ class GPT(nn.Module):
 
         self.tf_block = TransformerBlock(
             n_layers=n_layers,
-            n_heads=n_heads,
             hidden_dim=hidden_dim,
+            n_heads=n_heads,
             mlp_dim=hidden_dim * 4,
             attn_drop_prob=attn_drop_prob,
             resid_drop_prob=resid_drop_prob,
@@ -150,12 +140,12 @@ class GPT(nn.Module):
 
 
 if __name__ == "__main__":
-    # We train for 100 epochs on minibatches of 64 randomly sampled, contiguous sequences of 512 tokens.
+    # "We train for 100 epochs on minibatches of 64 randomly sampled, contiguous sequences of 512 tokens."
     # BATCH_SIZE = 64
     BATCH_SIZE = 4
     MAX_LEN = 512
 
     seq = torch.randint(low=0, high=VOCAB_SIZE, size=(BATCH_SIZE, MAX_LEN))
     gpt = GPT(vocab_size=VOCAB_SIZE)
-    output = gpt(seq)
-    print(output.shape)
+    logit = gpt(seq)
+    print(logit.shape)

@@ -108,7 +108,7 @@ class ResidualConnection(nn.Module):
         self.dim = dim
         self.drop_prob = drop_prob
 
-        self.resid_drop = nn.Dropout(drop_prob)
+        self.resid_drop = nn.Dropout(drop_prob) # "Residual dropout"
         self.norm = nn.LayerNorm(dim)
 
     def forward(self, x, sublayer):
@@ -138,7 +138,7 @@ class PositionwiseFeedForward(nn.Module):
         else:
             self.gelu = nn.GELU()
         self.proj2 = nn.Linear(self.mlp_dim, dim) # "$W_{2}$"
-        self.mlp_drop = nn.Dropout(drop_prob) # "Residual dropout"
+        self.mlp_drop = nn.Dropout(drop_prob)
 
     def forward(self, x):
         x = self.proj1(x)
@@ -152,7 +152,7 @@ class PositionwiseFeedForward(nn.Module):
 
 
 class EncoderLayer(nn.Module):
-    def __init__(self, dim, n_heads, mlp_dim, activ, attn_drop_prob=DROP_PROB, resid_drop_prob=DROP_PROB):
+    def __init__(self, dim, n_heads, mlp_dim, attn_drop_prob=DROP_PROB, resid_drop_prob=DROP_PROB):
         super().__init__()
 
         self.n_heads = n_heads
@@ -161,7 +161,7 @@ class EncoderLayer(nn.Module):
 
         self.self_attn = MultiHeadAttention(dim=dim, n_heads=n_heads, drop_prob=attn_drop_prob)
         self.attn_resid_conn = ResidualConnection(dim=dim, drop_prob=resid_drop_prob)
-        self.feed_forward = PositionwiseFeedForward(dim=dim, mlp_dim=mlp_dim, activ=activ)
+        self.feed_forward = PositionwiseFeedForward(dim=dim, mlp_dim=mlp_dim, activ="relu")
         self.ff_resid_conn = ResidualConnection(dim=dim, drop_prob=resid_drop_prob)
 
     def forward(self, x, mask=None):
@@ -201,7 +201,6 @@ class Encoder(nn.Module):
                     n_heads=n_heads,
                     dim=dim,
                     mlp_dim=mlp_dim,
-                    activ="relu",
                     attn_drop_prob=attn_drop_prob,
                     resid_drop_prob=resid_drop_prob,
                 )
@@ -217,7 +216,7 @@ class Encoder(nn.Module):
 
 
 class DecoderLayer(nn.Module):
-    def __init__(self, n_heads, dim, mlp_dim, activ, attn_drop_prob=DROP_PROB, resid_drop_prob=DROP_PROB):
+    def __init__(self, n_heads, dim, mlp_dim, attn_drop_prob=DROP_PROB, resid_drop_prob=DROP_PROB):
         super().__init__()
 
         self.n_heads = n_heads
@@ -228,7 +227,7 @@ class DecoderLayer(nn.Module):
         self.self_attn_resid_conn = ResidualConnection(dim=dim, drop_prob=resid_drop_prob)
         self.enc_dec_attn = MultiHeadAttention(dim=dim, n_heads=n_heads, drop_prob=attn_drop_prob)
         self.enc_dec_attn_resid_conn = ResidualConnection(dim=dim, drop_prob=resid_drop_prob)
-        self.feed_forward = PositionwiseFeedForward(dim=dim, mlp_dim=mlp_dim, activ=activ)
+        self.feed_forward = PositionwiseFeedForward(dim=dim, mlp_dim=mlp_dim, activ="relu")
         self.ff_resid_conn = ResidualConnection(dim=dim, drop_prob=resid_drop_prob)
 
     def forward(self, x, enc_out, self_attn_mask, enc_dec_mask):
@@ -272,7 +271,6 @@ class Decoder(nn.Module):
                     n_heads=n_heads,
                     dim=dim,
                     mlp_dim=mlp_dim,
-                    activ="relu",
                     attn_drop_prob=attn_drop_prob,
                     resid_drop_prob=resid_drop_prob,
                 )
