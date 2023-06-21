@@ -2,6 +2,9 @@
     # https://huggingface.co/learn/nlp-course/chapter6/6?fw=pt
     # https://github.com/codertimo/BERT-pytorch/blob/master/bert_pytorch/dataset/vocab.py
 
+# "Google never open-sourced its implementation of the training algorithm of WordPiece, so what follows
+# is the best guess based on the published literature."
+
 from transformers import AutoTokenizer
 from collections import defaultdict
 from pathlib import Path
@@ -12,6 +15,12 @@ import re
 
 TOKENIZER = AutoTokenizer.from_pretrained("bert-base-cased")
 
+# "Since it identifies subwords by adding a prefix (like `"##"` for BERT), each word is initially split
+# by adding that prefix to all the characters inside the word. For instance, `'word'` gets split like; `'w ##o ##r ##d'`
+# Thus, the initial alphabet contains all the characters present at the beginning of a word
+# and the characters present inside a word preceded by the WordPiece prefix."
+
+def pretokenize(text):
 
 def collect_corpus(corpus_dir, add_empty_string=False):
     corpus_dir = Path(corpus_dir)
@@ -41,11 +50,10 @@ def get_pretoken_frequencies(corpus):
 
 def get_character_level_vocabulary(pretokens):
     vocab = list()
-    for word in pretokens:
-        if word[0] not in vocab:
-            vocab.append(word[0])
-        for letter in word[1:]:
-            letter
+    for pretoken in pretokens:
+        if pretoken[0] not in vocab:
+            vocab.append(pretoken[0])
+        for letter in pretoken[1:]:
             if f"##{letter}" not in vocab:
                 vocab.append(f"##{letter}")
     vocab.sort()
@@ -93,11 +101,11 @@ def _compute_pair_scores(freqs, splits):
             pair_freqs[pair] += freq
         letter_freqs[split[-1]] += freq
 
-    scores = {
+    pair_scores = {
         pair: freq / (letter_freqs[pair[0]] * letter_freqs[pair[1]])
         for pair, freq in pair_freqs.items()
     }
-    return scores
+    return pair_scores
 
 
 def build_vocab(freqs, splits, vocab_size):
@@ -107,17 +115,15 @@ def build_vocab(freqs, splits, vocab_size):
 
     with tqdm(total=vocab_size - len(vocab)) as pbar:
         while len(vocab) < vocab_size:
-            scores = _compute_pair_scores(freqs=freqs, splits=splits)
+            pair_scores = _compute_pair_scores(freqs=freqs, splits=splits)
             best_pair, max_score = "", None
-            for pair, score in scores.items():
+            for pair, score in pair_scores.items():
                 if max_score is None or score > max_score:
                     best_pair = pair
                     max_score = score
             splits = _merge_pair(*best_pair, splits)
             new_token = (
-                best_pair[0] + best_pair[1][2:]
-                if best_pair[1].startswith("##")
-                else best_pair[0] + best_pair[1]
+                best_pair[0] + best_pair[1][2:] if best_pair[1].startswith("##") else best_pair[0] + best_pair[1]
             )
             vocab[new_token] = len(vocab)
 
