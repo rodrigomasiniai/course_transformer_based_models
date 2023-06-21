@@ -6,17 +6,13 @@ import re
 from tqdm.auto import tqdm
 from transformers import AutoTokenizer
 
-PATTERN = re.compile(r"""([!"#$%&'()*+,-./:;<=>?@\[\\\]^_`{\|}~]+)""")
-
 
 def _split_on_punctuation(text):
-    # text = "Ġ?the"
     ls = list()
     start = 0
-    for m in re.finditer(pattern=PATTERN, string=text):
+    for m in re.finditer(pattern=r"""([!"#$%&'()*+,-./:;<=>?@\[\\\]^_`{\|}~]+)""", string=text):
         end = m.start()
         trg = text[start: end]
-        # print(trg, ls)
         if "Ġ" == trg:
             ls.append(trg + text[end: m.end()])
         else:
@@ -83,8 +79,6 @@ def get_character_level_vocabulary(pretokens):
 
 
 def _compute_pair_frequencies(freqs):
-    # "We now need to split each word into individual characters, to be able to start training"
-    splits = {word: [c for c in word] for word in freqs.keys()}
     pair_freqs = defaultdict(int)
     for word, freq in freqs.items():
         split = splits[word]
@@ -164,7 +158,9 @@ if __name__ == "__main__":
     freqs = get_pretoken_frequencies(corpus)
     # "BPE training starts by computing the unique set of words used in the corpus
     # (after the normalization and pre-tokenization steps are completed)"
+    
+    # "We now need to split each word into individual characters, to be able to start training"
+    splits = {word: [c for c in word] for word in freqs.keys()}
 
-    pair_freqs = _compute_pair_frequencies(freqs)
     vocab, merges = build_vocab(splits=splits, vocab_size=50)
     tokenize("This is not a token.", merges=merges)

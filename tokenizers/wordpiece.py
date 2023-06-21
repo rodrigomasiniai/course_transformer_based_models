@@ -7,10 +7,8 @@
 
 from transformers import AutoTokenizer
 from collections import defaultdict
-from pathlib import Path
 from tqdm.auto import tqdm
 import json
-import argparse
 import re
 
 TOKENIZER = AutoTokenizer.from_pretrained("bert-base-cased")
@@ -20,29 +18,20 @@ TOKENIZER = AutoTokenizer.from_pretrained("bert-base-cased")
 # Thus, the initial alphabet contains all the characters present at the beginning of a word
 # and the characters present inside a word preceded by the WordPiece prefix."
 
+
 def pretokenize(text):
-
-def collect_corpus(corpus_dir, add_empty_string=False):
-    corpus_dir = Path(corpus_dir)
-
-    corpus = list()
-    for corpus_path in tqdm(list(corpus_dir.glob("**/*.txt"))):
-        with open(corpus_path, mode="r", encoding="utf-8") as f:
-            for line in f:
-                if line == "\n":
-                    continue
-                line = line.replace("\n", "").replace("\t", "")
-
-                corpus.append(line)
-    if add_empty_string:
-        corpus.append("")
-    return corpus
+    pretokens = list()
+    for i in re.split(pattern=r"[ ]+", string=text):
+        for j in re.split(pattern=r"""([ !"#$%&'()*+,-./:;<=>?@\[\\\]^_`{\|}~]+)""", string=i):
+            if j:
+                pretokens.append(j)
+    return pretokens
 
 
 def get_pretoken_frequencies(corpus):
     freqs = defaultdict(int)
     for text in tqdm(corpus):
-        pretokens = TOKENIZER.backend_tokenizer.pre_tokenizer.pre_tokenize_str(text)
+        pretokens = pretokenize(text)
         for pretoken, _ in pretokens:
             freqs[pretoken] += 1
     return freqs
@@ -167,11 +156,12 @@ def tokens_to_string(tokens):
 
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser()
-    parser.add_argument("--corpus_dir")
-    args = parser.parse_args()
-
-    corpus = collect_corpus(args.corpus_dir)
+    corpus = [
+        "This is the Hugging Face Course.",
+        "This chapter is about tokenization.",
+        "This section shows several tokenizer algorithms.",
+        "Hopefully, you will be able to understand how they are trained and generate tokens.",
+    ]
 
     freqs = get_pretoken_frequencies(corpus)
     splits = split_pretokens(pretokens=freqs.keys())
