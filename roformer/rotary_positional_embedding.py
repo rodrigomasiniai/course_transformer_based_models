@@ -5,124 +5,88 @@ import sys
 import torch
 from torch import nn
 
-# "Rotary encoding transforms pairs of features by rotating in the 2D plane. That is, it organizes the $d$ features
-# as $d/2$ pairs. Each pair can be considered a coordinate in a 2D plane, and the encoding will rotate it
-# by an angle depending on the position of the token."
-
-# "We pair feature $i$ with feature $i + 2/d$. So for position $m$ we transform
-# $$\left(\begin{matrix}
-#     x^{(i)}_{m}\\
-#     x^{(i + d / 2)}_{m}\\
-# \end{matrix}\right)$$
-# to
-# $$\left(\begin{matrix}
-#     x^{(i)}_{m}\cos{m\theta_{i}} - x^{(i + d / 2)}_{m}\sin{m\theta_{i}}\\
-#     x^{(i + d / 2)}_{m}\cos{m\theta_{i}} + x^{(i)}_{m}\sin{m\theta_{i}}\\
-# \end{matrix}\right)$$"
-
-# $⟨RoPE(xm(1)​,xm(2)​,m),RoPE(xn(1)​,xn(2)​,n)⟩$
-# This shows that for dot-production attention the rotary encodings gives relative attention.
+from transformer.model import MultiHeadAttention
 
 torch.set_printoptions(edgeitems=16, linewidth=sys.maxsize, sci_mode=True)
 
 
+# "Rotary encoding organizes the $d$ features as $d/2$ pairs. Each pair can be considered
+# a coordinate in a 2D plane, and the encoding will rotate it by an angle depending on the position of the token."
+
+# We pair feature $i$ with feature $i + 2/d$. So for position $m$
+# If $i \in \{1, 2, ... d / 2\}$
+# $$x^{(i)}_{m}$$
+# is transformed to
+# $$x^{(i)}_{m}\cos{m\theta_{i}} + (-x^{(i + d / 2)}_{m})\sin{m\theta_{i}}$$
+# and otherwise transformed to
+# $$x^{(i + d / 2)}_{m}\cos{m\theta_{i}} + x^{(i)}_{m}\sin{m\theta_{i}}$$
+
+# $$\langle \text{RoPE}(x^{(1)}_{m}​, x^{(2)}_{m}​, m), \text{RoPE}(x^{(1)}_{n}​, x^{(2)}_{n}​, n) \rangle =\
+# \langle \text{RoPE}(x^{(1)}_{m}​, x^{(2)}_{m}​, m - n), \text{RoPE}(x^{(1)}_{n}​, x^{(2)}_{n}​, 0) \rangle$$
+# "This shows that for dot-production attention the rotary encodings gives relative attention."
 class RotaryPositionalEmbedding(nn.Module):
-    def __init__(self, dim, base=10_000):
+    def __init__(self, head_dim, base=10_000):
         super().__init__()
 
-        self.dim = dim
+        self.head_dim = head_dim
         self.base = base
 
     def _get_theta(self, i):
         # $\Theta = \{\theta_{i} = 10000^{-2(i - 1)/d}, i \in [1, 2, \ldots d/2]\}$
-        return self.base ** (-2 * (i - 1) / self.dim)
+        return self.base ** (-2 * (i - 1) / self.head_dim)
 
-    # `x`` is the tensor at the head of a key or a query with shape (`batch_size`, `n_heads`, `seq_len`, `dim`)
+    # `x` is the tensor at the head of a key or a query with shape (`batch_size`, `n_heads`, `seq_len`, `head_dim`)
     def forward(self, x):
-        # x = torch.randn((16, 512, 64))
-        b, n, seq_len, d = x.shape
+        _, _, seq_len, _ = x.shape
 
-        pos = torch.arange(seq_len, dtype=x.dtype)
-        i = torch.arange(1, self.dim // 2 + 1).repeat(2)
+        pos = torch.arange(seq_len, dtype=x.dtype) # $m$
+        i = torch.arange(1, self.head_dim // 2 + 1).repeat(2) # $i$ # 1, 2, ..., d / 2| 1, 2, ... d / 2
         theta = self._get_theta(i) # $\theta_{i}$
-        v = torch.einsum("p,t->pt", pos, theta)
+        v = torch.einsum("p,t->pt", pos, theta) # $m\theta_{i}$
 
-        self.sin_cached = torch.sin(v)
-        self.cos_cached = torch.cos(v)
+        self.cos_mtheta = torch.cos(v) # $\cos{m\theta_{i}}$
+        self.sin_mtheta = torch.sin(v) # $\sin{m\theta_{i}}$
 
-rope = RotaryPositionalEmbedding(d=64)
-x = torch.randn((512, 64))
-rope(x)
-rope.cos_cached
+        #             1,             2, ...,    d // 2 - 1|    d // 2, d // 2 + 1, ...,      d - 1,      d
+        # -(1 + d / 2), -(2 + d / 2), ...,      -(d - 1)|      -(d),          1, ..., d / 2 - 1, d / 2
+        pair = torch.cat([-x[..., self.head_dim // 2:], x[..., : self.head_dim // 2]], dim=3)
+        x = x * self.cos_mtheta + pair * self.sin_mtheta
+        return x
 
 
-# class RotaryPositionalEmbeddings(nn.Module):
-#     def __init__(self, d: int, base: int = 10_000):
-#         """
-#         * `d` is the number of features $d$
-#         * `base` is the constant used for calculating $\Theta$
-#         """
-#         super().__init__()
+class RoPEMultiHeadAttention(MultiHeadAttention):
+    def __init__(self, dim, n_heads, drop_prob, rope_prob=0.5):
+        super().__init__(dim=dim, n_heads=n_heads, drop_prob=drop_prob)
 
-#         base = base
-#         d = d
-#         cos_cached = None
-#         sin_cached = None
+        self.rope_prob = rope_prob
 
-#     def _build_cache(self, x: torch.Tensor):
-#         """
-#         Cache $\cos$ and $\sin$ values
-#         """
-#         # Return if cache is already built
-#         if cos_cached is not None and x.shape[0] <= cos_cached.shape[0]:
-#             return
+        # self.rope_dim = int(self.head_dim * self.rope_prob)
+        self.rope_dim = dim // n_heads
+        self.q_rope, self.k_rope = (
+            RotaryPositionalEmbedding(head_dim=self.rope_dim),
+            RotaryPositionalEmbedding(head_dim=self.rope_dim)
+        )
 
-#         # Get sequence length
-#         seq_len = x.shape[0]
+    def _get_attention_score(self, q, k):
+        attn_score = torch.einsum("bnid,bnjd->bnij", self.q_rope(q), self.k_rope(k))
+        return attn_score
 
-# $\Theta = {\theta_i = 10000^{\frac{2(i-1)}{d}}, i \in [1, 2, ..., \frac{d}{2}]}$
-theta = 1. / (base ** (torch.arange(0, d, 2).float() / d)).to(x.device)
-seq_idx = torch.arange(seq_len, device=x.device).float().to(x.device)
-idx_theta = torch.einsum('n,d->nd', seq_idx, theta)
-idx_theta2 = torch.cat([idx_theta, idx_theta], dim=1)
-idx_theta2
-idx_theta.shape
 
-cos_cached = idx_theta2.cos()[:, None, None, :]
-sin_cached = idx_theta2.sin()[:, None, None, :]
+if __name__ == "__main__":
+    BATCH_SIZE = 16
+    N_HEADS = 8
+    SEQ_LEN = 30
+    DIM = 96
+    rope = RotaryPositionalEmbedding(dim=DIM)
+    x = torch.randn((BATCH_SIZE, N_HEADS, SEQ_LEN, DIM))
+    out = rope(x)
+    print(x.shape, out.shape)
 
-#     def _neg_half(self, x: torch.Tensor):
-#         # $\frac{d}{2}$
-#         d_2 = d // 2
 
-#         # Calculate $[-x^{(\frac{d}{2} + 1)}, -x^{(\frac{d}{2} + 2)}, ..., -x^{(d)}, x^{(1)}, x^{(2)}, ..., x^{(\frac{d}{2})}]$
-#         return torch.cat([-x[:, :, :, d_2:], x[:, :, :, :d_2]], dim=-1)
-
-#     def forward(self, x: torch.Tensor):
-#         """
-#         * `x` is the Tensor at the head of a key or a query with shape `[seq_len, batch_size, n_heads, d]`
-#         """
-#         # Cache $\cos$ and $\sin$ values
-#         _build_cache(x)
-
-#         # Split the features, we can choose to apply rotary embeddings only to a partial set of features.
-#         x_rope, x_pass = x[..., :d], x[..., d:]
-
-#         # Calculate
-#         # $[-x^{(\frac{d}{2} + 1)}, -x^{(\frac{d}{2} + 2)}, ..., -x^{(d)}, x^{(1)}, x^{(2)}, ..., x^{(\frac{d}{2})}]$
-#         neg_half_x = _neg_half(x_rope)
-
-#         # Calculate
-#         #
-#         # \begin{align}
-#         # \begin{pmatrix}
-#         # x^{(i)}_m \cos m \theta_i - x^{(i + \frac{d}{2})}_m \sin m \theta_i \\
-#         # x^{(i + \frac{d}{2})}_m \cos m\theta_i + x^{(i)}_m \sin m \theta_i \\
-#         # \end{pmatrix} \\
-#         # \end{align}
-#         #
-#         # for $i \in {1, 2, ..., \frac{d}{2}}$
-#         x_rope = (x_rope * cos_cached[:x.shape[0]]) + (neg_half_x * sin_cached[:x.shape[0]])
-
-#         #
-#         return torch.cat((x_rope, x_pass), dim=-1)
+    DIM = 512
+    N_HEADS = 8
+    DROP_PROB = 0.1
+    rope_mha = RoPEMultiHeadAttention(dim=DIM, n_heads=N_HEADS, drop_prob=DROP_PROB)
+    x = torch.randn((BATCH_SIZE, SEQ_LEN, DIM))
+    out = rope_mha(q=x, k=x, v=x)
+    out.shape

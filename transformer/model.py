@@ -77,7 +77,12 @@ class MultiHeadAttention(nn.Module):
         self.attn_drop = nn.Dropout(drop_prob) # Not in the paper
         self.out_proj = nn.Linear(dim, dim, bias=False) # "$W^{O}$"
 
+    def _get_attention_score(self, q, k):
+        attn_score = torch.einsum("bnid,bnjd->bnij", q, k) # "MatMul" in "Figure 2" of the paper
+        return attn_score
+
     def forward(self, q, k, v, mask=None):
+        # print(q.shape, k.shape, v.shape)
         b, l, _ = q.shape
 
         q, k, v = self.q_proj(q), self.k_proj(k), self.v_proj(v)
@@ -85,7 +90,7 @@ class MultiHeadAttention(nn.Module):
         k = k.view(b, self.n_heads, l, self.head_dim)
         v = v.view(b, self.n_heads, l, self.head_dim)
 
-        attn_score = torch.einsum("bnld,bnLd->bnlL", q, k) # "MatMul" in "Figure 2" of the paper
+        attn_score = self._get_attention_score(q=q, k=k)
         if mask is not None:
             attn_score.masked_fill_(mask=mask, value=-1e9) # "Mask (opt.)"
         attn_score /= (self.head_dim ** 0.5) # "Scale"
@@ -93,8 +98,8 @@ class MultiHeadAttention(nn.Module):
         attn_weight = F.softmax(attn_score, dim=3) # "Softmax"
         attn_weight = self.attn_drop(attn_weight) # Not in the paper
 
-        x = torch.einsum("bnlL,bnLd->bnld", attn_weight, v) # "MatMul"
-        x = rearrange(x, pattern="b n l d -> b l (n d)")
+        x = torch.einsum("bnij,bnjd->bnid", attn_weight, v) # "MatMul"
+        x = rearrange(x, pattern="b n i d -> b i (n d)")
 
         x = self.out_proj(x)
         return x
