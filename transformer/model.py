@@ -79,23 +79,22 @@ class MultiHeadAttention(nn.Module):
 
     def forward(self, q, k, v, mask=None):
         b, l, _ = q.shape
-        _, m, _ = k.shape
 
         q, k, v = self.q_proj(q), self.k_proj(k), self.v_proj(v)
-        q = q.view(b, l, self.head_dim, self.n_heads)
-        k = k.view(b, m, self.head_dim, self.n_heads)
-        v = v.view(b, m, self.head_dim, self.n_heads)
+        q = q.view(b, self.n_heads, l, self.head_dim)
+        k = k.view(b, self.n_heads, l, self.head_dim)
+        v = v.view(b, self.n_heads, l, self.head_dim)
 
-        attn_score = torch.einsum("bldn,bmdn->blmn", q, k) # "MatMul" in "Figure 2" of the paper
+        attn_score = torch.einsum("bnld,bnLd->bnlL", q, k) # "MatMul" in "Figure 2" of the paper
         if mask is not None:
             attn_score.masked_fill_(mask=mask, value=-1e9) # "Mask (opt.)"
         attn_score /= (self.head_dim ** 0.5) # "Scale"
 
-        attn_weight = F.softmax(attn_score, dim=2) # "Softmax"
+        attn_weight = F.softmax(attn_score, dim=3) # "Softmax"
         attn_weight = self.attn_drop(attn_weight) # Not in the paper
 
-        x = torch.einsum("blmn,bmdn->bldn", attn_weight, k) # "MatMul"
-        x = rearrange(x, pattern="b l d n -> b l (d n)")
+        x = torch.einsum("bnlL,bnLd->bnld", attn_weight, v) # "MatMul"
+        x = rearrange(x, pattern="b n l d -> b l (n d)")
 
         x = self.out_proj(x)
         return x
@@ -289,14 +288,14 @@ class Decoder(nn.Module):
 
 
 def _get_pad_mask(seq, pad_id=0):
-    mask = (seq == pad_id).unsqueeze(2).unsqueeze(3)
+    mask = (seq == pad_id).unsqueeze(1).unsqueeze(3)
     return mask
 
 
 # "Prevent positions from attending to subsequent positions."
 def _get_subsequent_info_mask(src_seq_len, trg_seq_len):
     mask = torch.tril(torch.ones(size=(trg_seq_len, src_seq_len)), diagonal=0).bool()
-    mask = mask.unsqueeze(0).unsqueeze(3)
+    mask = mask.unsqueeze(0).unsqueeze(1)
     return mask
 
 
