@@ -2,8 +2,8 @@ import torch.nn as nn
 import torch.nn.functional as F
 from torch.utils.data import DataLoader
 
-from bert.model import BERT, MaskedLanguageModelHead, NextSentencePredictionHead
-from bert.data import BERTDataset
+from transformer_based_models.bert.model import BERT, MaskedLanguageModelHead, NextSentencePredictionHead
+from transformer_based_models.bert.pretrain.bookcorpus import BookCorpusForBERT
 
 
 class BERTLoss(nn.Module):
@@ -36,7 +36,7 @@ if __name__ == "__main__":
     SEQ_LEN = 512
     # BATCH_SIZE = 256
     BATCH_SIZE = 8
-    ds = BERTDataset(vocab_path=vocab_path, corpus_dir=corpus_dir, seq_len=SEQ_LEN)
+    ds = BookCorpusForBERT(vocab_path=vocab_path, corpus_dir=corpus_dir, seq_len=SEQ_LEN)
     dl = DataLoader(dataset=ds, batch_size=BATCH_SIZE, shuffle=True, drop_last=True)
     for batch, data in enumerate(dl, start=1):
         bert_output = bert(seq=data["masked_ids"], seg_label=data["segment_label"])
