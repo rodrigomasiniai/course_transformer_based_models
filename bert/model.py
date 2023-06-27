@@ -31,8 +31,8 @@ class ResidualConnection(nn.Module):
         self.dim = dim
         self.drop_prob = drop_prob
 
-        self.resid_drop = nn.Dropout(drop_prob)
         self.norm = nn.LayerNorm(dim)
+        self.resid_drop = nn.Dropout(drop_prob)
 
     def forward(self, x, sublayer):
         out = self.norm(x)

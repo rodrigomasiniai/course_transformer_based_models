@@ -5,7 +5,7 @@
 
 # Model specifications Our model largely follows the original transformer work [62]. We trained a 12-layer decoder-only transformer with masked self-attention heads (768 dimensional states and 12 attention heads). For the position-wise feed-forward networks, we used 3072 dimensional inner states. We used the Adam optimization scheme [27] with a max learning rate of 2.5e-4. The learning rate was increased linearly from zero over the first 2000 updates and annealed to 0 using a cosine schedule.
 # Since layernorm [2] is used extensively throughout the model, a simple weight initialization of N(0; 0:02) was sufficient.
-# We use the ftfy library2 to clean the raw text in BooksCorpus, standardize some punctuation and whitespace, and use the spaCy tokenizer.3
+# We use the ftfy library2 to clean the raw text in BooksCorpus, standardize some punctuation and whitespace, and use the spaCy tokenizer.
 
 # We also employed a modified version of L2 regularization proposed in [37], with w = 0:01 on all non bias or gain weights.
 
