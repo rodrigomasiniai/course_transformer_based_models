@@ -3,16 +3,19 @@
     # # https://d2l.ai/chapter_natural-language-processing-pretraining/bert-dataset.html#sec-bert-dataset
     # https://nn.labml.ai/transformers/mlm/index.html
 
+# "For the pre-training corpus we use the BookCorpus (800M words) (Zhu et al., 2015)
+# and English Wikipedia (2,500M words)." For Wikipedia we extract only the text passages and ignore lists, tables, and headers. It is critical to use a document-level corpus rather than a shuffled sentence-level corpus such as the Billion Word Benchmark (Chelba et al.,
+
 import sys
 import torch
-import torch.nn.functional as F
 from torch.utils.data import Dataset, DataLoader
 import numpy as np
 import random
 from pathlib import Path
 from tqdm.auto import tqdm
 
-from bert.tokenize import prepare_bert_tokenizer
+# from bert.tokenize import prepare_bert_tokenizer
+from transformer_based_models.tokenizers.wordpiece import encode
 
 np.set_printoptions(edgeitems=20, linewidth=sys.maxsize, suppress=False)
 torch.set_printoptions(edgeitems=16, linewidth=sys.maxsize, sci_mode=True)
@@ -22,17 +25,23 @@ class BookCorpusForBERT(Dataset):
     def __init__(
         self,
         data_dir,
-        tokenizer,
+        # tokenizer,
+        vocab,
         max_len,
     ):
         self.data_dir = data_dir
-        self.tokenizer = tokenizer
+        # self.tokenizer = tokenizer
+        self.vocab = vocab
         self.max_len = max_len
 
-        self.cls_id = tokenizer.token_to_id("[CLS]")
-        self.sep_id = tokenizer.token_to_id("[SEP]")
-        self.pad_id = tokenizer.token_to_id("[PAD]")
-        self.unk_id = tokenizer.token_to_id("[UNK]")
+        # self.cls_id = tokenizer.token_to_id("[CLS]")
+        # self.sep_id = tokenizer.token_to_id("[SEP]")
+        # self.pad_id = tokenizer.token_to_id("[PAD]")
+        # self.unk_id = tokenizer.token_to_id("[UNK]")
+        self.cls_id = vocab["[CLS]"]
+        self.sep_id = vocab["[SEP]"]
+        self.pad_id = vocab["[PAD]"]
+        self.unk_id = vocab["[UNK]"]
 
         self.corpus = self._get_corpus()
         self.data = self._get_data(self.corpus)
@@ -45,12 +54,13 @@ class BookCorpusForBERT(Dataset):
                 if parag == "":
                     continue
 
-                token_ids = self.tokenizer.encode(parag).ids
+                # token_ids = self.tokenizer.encode(parag).ids
+                token_ids = encode(parag, vocab=self.vocab)
                 corpus.append(
                     {
                         "document": str(doc_path),
                         "paragraph": parag,
-                        "token_indices": token_ids
+                        "token_ids": token_ids
                     }
                 )
         return corpus
@@ -73,20 +83,20 @@ class BookCorpusForBERT(Dataset):
                 is_next = False
                 id2 = random.randrange(len(corpus))
             segs = [corpus[id1]["paragraph"], corpus[id2]["paragraph"]]
-            ls_token_ids = [corpus[id1]["token_indices"], corpus[id2]["token_indices"]]
+            ls_token_ids = [corpus[id1]["token_ids"], corpus[id2]["token_ids"]]
 
             token_ids = self._convert_to_bert_input_representation(ls_token_ids)
             data.append(
                 {
                     "segments": segs,
-                    "lists_of_token_indices": ls_token_ids,
-                    "token_indices": token_ids,
+                    "lists_of_token_ids": ls_token_ids,
+                    "token_ids": token_ids,
                     "is_next": is_next
                 }
             )
         return data
 
-    def _get_segment_indices_from_token_indices(self, token_ids):
+    def _get_segment_ids_from_token_ids(self, token_ids):
         seg_ids = torch.zeros_like(token_ids, dtype=token_ids.dtype, device=token_ids.device)
         is_sep = (token_ids == self.sep_id)
         if is_sep.sum() == 2:
@@ -98,8 +108,8 @@ class BookCorpusForBERT(Dataset):
         return len(self.data)
 
     def __getitem__(self, idx):
-        token_ids = torch.as_tensor(self.data[idx]["token_indices"])
-        seg_ids = self._get_segment_indices_from_token_indices(token_ids)
+        token_ids = torch.as_tensor(self.data[idx]["token_ids"])
+        seg_ids = self._get_segment_ids_from_token_ids(token_ids)
         return token_ids, seg_ids, torch.as_tensor(self.data[idx]["is_next"])
 
 
@@ -110,6 +120,7 @@ if __name__ == "__main__":
     data_dir = "/Users/jongbeomkim/Documents/datasets/bookcorpus_subset"
     vocab_path = "/Users/jongbeomkim/Desktop/workspace/transformer_based_models/bert/vocab_example.json"
     tokenizer = prepare_bert_tokenizer(vocab_path=vocab_path)
+    tokenizer.encode("[CLS]").tokens
     ds = BookCorpusForBERT(data_dir=data_dir, tokenizer=tokenizer, max_len=MAX_LEN)
     dl = DataLoader(dataset=ds, batch_size=BATCH_SIZE, shuffle=True, drop_last=True)
     for batch, (token_ids, seg_ids, is_next) in enumerate(dl, start=1):

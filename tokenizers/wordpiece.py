@@ -18,8 +18,17 @@ TOKENIZER = AutoTokenizer.from_pretrained("bert-base-cased")
 # Thus, the initial alphabet contains all the characters present at the beginning of a word
 # and the characters present inside a word preceded by the WordPiece prefix."
 
+def _lowercase(text):
+    text = text.lower()
+    return text
 
-def pretokenize(text):
+
+def _preprocess(text):
+    text = _lowercase(text)
+    return text
+
+
+def _pretokenize(text):
     pretokens = list()
     for i in re.split(pattern=r"[ ]+", string=text):
         for j in re.split(pattern=r"""([ !"#$%&'()*+,-./:;<=>?@\[\\\]^_`{\|}~]+)""", string=i):
@@ -28,31 +37,36 @@ def pretokenize(text):
     return pretokens
 
 
-def get_pretoken_frequencies(corpus):
+def _get_pretoken_frequencies(corpus):
+    print("Computing frequencies of pretokens...")
+
     freqs = defaultdict(int)
     for text in tqdm(corpus):
-        pretokens = pretokenize(text)
-        for pretoken, _ in pretokens:
+        text = _preprocess(text)
+        pretokens = _pretokenize(text)
+        for pretoken in pretokens:
             freqs[pretoken] += 1
     return freqs
 
 
-def get_character_level_vocabulary(pretokens):
-    vocab = list()
+def _build_base_vocabulary(pretokens):
+    print("Building base vocabulary...")
+
+    base_vocab = list()
     for pretoken in pretokens:
-        if pretoken[0] not in vocab:
-            vocab.append(pretoken[0])
-        for letter in pretoken[1:]:
-            if f"##{letter}" not in vocab:
-                vocab.append(f"##{letter}")
-    vocab.sort()
-    vocab = ["[PAD]", "[UNK]", "[CLS]", "[SEP]", "[MASK]"] + vocab.copy()
+        if pretoken[0] not in base_vocab:
+            base_vocab.append(pretoken[0])
+        for char in pretoken[1:]:
+            if f"##{char}" not in base_vocab:
+                base_vocab.append(f"##{char}")
+    base_vocab.sort()
+    base_vocab = ["[PAD]", "[UNK]", "[CLS]", "[SEP]", "[MASK]"] + base_vocab
 
-    vocab = {char: i for i, char in enumerate(vocab)}
-    return vocab
+    base_vocab = {char: i for i, char in enumerate(base_vocab)}
+    return base_vocab
 
 
-def split_pretokens(pretokens):
+def _split_pretokens(pretokens):
     splits = {
         pretoken: [char if id_ == 0 else f"##{char}" for id_, char in enumerate(pretoken)]
         for pretoken in pretokens
@@ -60,15 +74,15 @@ def split_pretokens(pretokens):
     return splits
 
 
-def _merge_pair(a, b, splits):
+def _merge_pair(pair, splits):
     for pretoken in splits:
         split = splits[pretoken]
         if len(split) == 1:
             continue
         i = 0
         while i < len(split) - 1:
-            if split[i] == a and split[i + 1] == b:
-                merge = a + b[2:] if b.startswith("##") else a + b
+            if split[i] == pair[0] and split[i + 1] == pair[1]:
+                merge = pair[0] + pair[1][2:] if pair[1].startswith("##") else pair[0] + pair[1]
                 split = split[:i] + [merge] + split[i + 2 :]
             else:
                 i += 1
@@ -77,69 +91,89 @@ def _merge_pair(a, b, splits):
 
 
 def _compute_pair_scores(freqs, splits):
-    letter_freqs = defaultdict(int)
+    char_freqs = defaultdict(int)
     pair_freqs = defaultdict(int)
-    for word, freq in freqs.items():
-        split = splits[word]
+    for token, freq in freqs.items():
+        split = splits[token]
         if len(split) == 1:
-            letter_freqs[split[0]] += freq
+            char_freqs[split[0]] += freq
             continue
         for i in range(len(split) - 1):
             pair = (split[i], split[i + 1])
-            letter_freqs[split[i]] += freq
+            char_freqs[split[i]] += freq
             pair_freqs[pair] += freq
-        letter_freqs[split[-1]] += freq
+        char_freqs[split[-1]] += freq
 
     pair_scores = {
-        pair: freq / (letter_freqs[pair[0]] * letter_freqs[pair[1]])
+        # Score : $\text{Frequency of pair} / (text{Frequency of first element of pair} \times text{Frequency of second element of pair})$
+        pair: freq / (char_freqs[pair[0]] * char_freqs[pair[1]])
         for pair, freq in pair_freqs.items()
     }
     return pair_scores
 
 
-def build_vocab(freqs, splits, vocab_size):
-    vocab = get_character_level_vocabulary(pretokens=freqs.keys())
-    if len(vocab) >= vocab_size:
+def build_vocabulary(corpus, vocab_size, save_path):
+    freqs = _get_pretoken_frequencies(corpus)
+    splits = _split_pretokens(pretokens=freqs.keys())
+    vocab = _build_base_vocabulary(pretokens=freqs.keys())
+    if len(vocab) == vocab_size:
+        return vocab
+    elif len(vocab) > vocab_size:
+        vocab = {k: v for i, (k, v) in enumerate(vocab.items(), start=1) if i <= vocab_size}
         return vocab
 
     with tqdm(total=vocab_size - len(vocab)) as pbar:
         while len(vocab) < vocab_size:
             pair_scores = _compute_pair_scores(freqs=freqs, splits=splits)
-            best_pair, max_score = "", None
+            if not pair_scores:
+                break
+            best_pair = ("", "")
+            max_score = None
             for pair, score in pair_scores.items():
-                if max_score is None or score > max_score:
+                if (max_score is None) or (score > max_score):
                     best_pair = pair
-                    max_score = score
-            splits = _merge_pair(*best_pair, splits)
+                    max_score = score            
+            splits = _merge_pair(pair=best_pair, splits=splits)
             new_token = (
                 best_pair[0] + best_pair[1][2:] if best_pair[1].startswith("##") else best_pair[0] + best_pair[1]
             )
             vocab[new_token] = len(vocab)
 
             pbar.update(1)
-    return vocab
+
+    with open(save_path, mode="w") as f:
+        json.dump(vocab, f)
+
+    print(f"""Completed building vocabulary! Vocabulary size is {len(vocab):,}.""")
 
 
-def _encode_word(word, vocab):
+def _separate_into_tokens(pretoken, vocab):
     tokens = list()
-    while len(word) > 0:
-        i = len(word)
-        while i > 0 and word[: i] not in vocab:
+    while len(pretoken) > 0:
+        i = len(pretoken)
+        while i > 0 and pretoken[: i] not in vocab:
             i -= 1
         if i == 0:
             return ["[UNK]"]
-        tokens.append(word[: i])
+        tokens.append(pretoken[: i])
 
-        word = word[i:]
-        if len(word) > 0:
-            word = f"##{word}"
+        pretoken = pretoken[i:]
+        if len(pretoken) > 0:
+            pretoken = f"##{pretoken}"
     return tokens
 
 
 def tokenize(text, vocab):
-    pretokens = TOKENIZER._tokenizer.pre_tokenizer.pre_tokenize_str(text)
-    encoded_words = [_encode_word(word=pretoken, vocab=vocab) for pretoken, _ in pretokens]
-    return sum(encoded_words, [])
+    # text="Hello!"
+    # pretokens = TOKENIZER._tokenizer.pre_tokenizer.pre_tokenize_str(text)
+    # encoded = [_separate_into_tokens(word=pretoken, vocab=vocab) for pretoken, _ in pretokens]
+    pretokens = _pretokenize(text)
+    encoded = [_separate_into_tokens(pretoken, vocab=vocab) for pretoken in pretokens]
+    return sum(encoded, [])
+
+
+def encode(text, vocab):
+    return [vocab[i] for i in tokenize(text, vocab=vocab)]
 
 
 def tokens_to_string(tokens):
@@ -163,10 +197,6 @@ if __name__ == "__main__":
         "Hopefully, you will be able to understand how they are trained and generate tokens.",
     ]
 
-    freqs = get_pretoken_frequencies(corpus)
-    splits = split_pretokens(pretokens=freqs.keys())
-    vocab = build_vocab(freqs=freqs, splits=splits, vocab_size=1200)
-
-    json_path = "vocab.json"
-    with open(json_path, mode="w") as f:
-        json.dump(vocab, f)
+    build_vocabulary(
+        corpus=corpus, vocab_size=120, save_path="/Users/jongbeomkim/Desktop/workspace/transformer_based_models/bert/vocab.json"
+    )
