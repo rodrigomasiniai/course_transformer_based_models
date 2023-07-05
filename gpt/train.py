@@ -8,7 +8,7 @@ from timm.optim import AdamP
 from timm.scheduler import CosineLRScheduler
 import matplotlib.pyplot as plt
 
-from process_images import _figure_to_array, show_image
+from image_utils import _figure_to_array, show_image
 
 
 def get_lr_schedule(scheduler, n_steps):

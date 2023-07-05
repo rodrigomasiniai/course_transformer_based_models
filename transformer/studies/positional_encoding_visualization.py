@@ -3,7 +3,7 @@ import cmapy
 import matplotlib.pyplot as plt
 
 from transformer.model import PositionalEncoding
-from process_images import _figure_to_array, save_image
+from image_utils import _figure_to_array, save_image
 
 
 def visualize_positional_encoding_matrix(pos_enc, cmap="bwr"):
