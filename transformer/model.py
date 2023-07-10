@@ -234,12 +234,12 @@ class DecoderLayer(nn.Module):
         self.feed_forward = PositionwiseFeedForward(dim=dim, mlp_dim=mlp_dim, activ="relu")
         self.ff_resid_conn = ResidualConnection(dim=dim, drop_prob=resid_drop_prob)
 
-    def forward(self, x, enc_out, self_attn_mask, enc_dec_mask):
+    def forward(self, x, enc_out, self_attn_mask, enc_dec_attn_mask):
         x = self.self_attn_resid_conn(
             x=x, sublayer=lambda x: self.self_attn(q=x, k=x, v=x, mask=self_attn_mask)
         )
         x = self.enc_dec_attn_resid_conn(
-            x=x, sublayer=lambda x: self.enc_dec_attn(q=x, k=enc_out, v=enc_out, mask=enc_dec_mask)
+            x=x, sublayer=lambda x: self.enc_dec_attn(q=x, k=enc_out, v=enc_out, mask=enc_dec_attn_mask)
         )
         x = self.ff_resid_conn(x=x, sublayer=self.feed_forward)
         return x
@@ -283,10 +283,10 @@ class Decoder(nn.Module):
         )
         self.linear = nn.Linear(dim, trg_vocab_size)
 
-    def forward(self, x, enc_out, self_attn_mask=None, enc_dec_mask=None):
+    def forward(self, x, enc_out, self_attn_mask=None, enc_dec_attn_mask=None):
         x = self.input(x)
         for dec_layer in self.dec_stack:
-            x = dec_layer(x, enc_out=enc_out, self_attn_mask=self_attn_mask, enc_dec_mask=enc_dec_mask)
+            x = dec_layer(x, enc_out=enc_out, self_attn_mask=self_attn_mask, enc_dec_attn_mask=enc_dec_attn_mask)
         x = self.linear(x)
         x = F.softmax(x, dim=-1)
         return x
@@ -372,7 +372,7 @@ class Transformer(nn.Module):
             trg_seq,
             enc_out=enc_out,
             self_attn_mask=trg_pad_mask,
-            enc_dec_mask=(trg_pad_mask | trg_subseq_mask) # `&` or `|`??
+            enc_dec_attn_mask=(trg_pad_mask | trg_subseq_mask) # `&` or `|`??
         )
         return dec_out
 
