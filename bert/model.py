@@ -4,7 +4,12 @@
 import torch
 import torch.nn as nn
 
-from transformer.model import PositionalEncoding, MultiHeadAttention, PositionwiseFeedForward, _get_pad_mask
+from transformer.model import (
+    PositionalEncoding,
+    MultiHeadAttention,
+    PositionwiseFeedForward,
+    _get_pad_mask,
+)
 
 DROP_PROB = 0.1
 
