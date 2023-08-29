@@ -10,6 +10,7 @@ from collections import defaultdict
 from tqdm.auto import tqdm
 import json
 import re
+from pathlib import Path
 
 TOKENIZER = AutoTokenizer.from_pretrained("bert-base-cased")
 
@@ -39,19 +40,18 @@ def _pretokenize(text):
 
 def _get_pretoken_frequencies(corpus):
     print("Computing frequencies of pretokens...")
-
     freqs = defaultdict(int)
     for text in tqdm(corpus):
         text = _preprocess(text)
         pretokens = _pretokenize(text)
         for pretoken in pretokens:
             freqs[pretoken] += 1
+    print(f"""Number of pretokens: {len(freqs):,}""")
     return freqs
 
 
 def _build_base_vocabulary(pretokens):
     print("Building base vocabulary...")
-
     base_vocab = list()
     for pretoken in pretokens:
         if pretoken[0] not in base_vocab:
@@ -63,6 +63,7 @@ def _build_base_vocabulary(pretokens):
     base_vocab = ["[PAD]", "[UNK]", "[CLS]", "[SEP]", "[MASK]"] + base_vocab
 
     base_vocab = {char: i for i, char in enumerate(base_vocab)}
+    print(f"""Size of base vocabulary: {len(base_vocab):,}""")
     return base_vocab
 
 
@@ -105,46 +106,54 @@ def _compute_pair_scores(freqs, splits):
         char_freqs[split[-1]] += freq
 
     pair_scores = {
-        # Score : $\text{Frequency of pair} / (text{Frequency of first element of pair} \times text{Frequency of second element of pair})$
+        # Score : $\text{Frequency of pair} / (text{Frequency of first element of pair}
+        # \times text{Frequency of second element of pair})$
         pair: freq / (char_freqs[pair[0]] * char_freqs[pair[1]])
         for pair, freq in pair_freqs.items()
     }
     return pair_scores
 
 
-def build_vocabulary(corpus, vocab_size, save_path):
-    freqs = _get_pretoken_frequencies(corpus)
-    splits = _split_pretokens(pretokens=freqs.keys())
-    vocab = _build_base_vocabulary(pretokens=freqs.keys())
-    if len(vocab) == vocab_size:
-        return vocab
-    elif len(vocab) > vocab_size:
-        vocab = {k: v for i, (k, v) in enumerate(vocab.items(), start=1) if i <= vocab_size}
-        return vocab
+def build_or_load_vocab(corpus, vocab_size, save_path):
+    if not Path(save_path).exists():
+        freqs = _get_pretoken_frequencies(corpus)
+        splits = _split_pretokens(pretokens=freqs.keys())
+        vocab = _build_base_vocabulary(pretokens=freqs.keys())
+        len(vocab.keys())
+        if len(vocab) == vocab_size:
+            return vocab
+        elif len(vocab) > vocab_size:
+            vocab = {k: v for i, (k, v) in enumerate(vocab.items(), start=1) if i <= vocab_size}
+            return vocab
 
-    with tqdm(total=vocab_size - len(vocab)) as pbar:
-        while len(vocab) < vocab_size:
-            pair_scores = _compute_pair_scores(freqs=freqs, splits=splits)
-            if not pair_scores:
-                break
-            best_pair = ("", "")
-            max_score = None
-            for pair, score in pair_scores.items():
-                if (max_score is None) or (score > max_score):
-                    best_pair = pair
-                    max_score = score            
-            splits = _merge_pair(pair=best_pair, splits=splits)
-            new_token = (
-                best_pair[0] + best_pair[1][2:] if best_pair[1].startswith("##") else best_pair[0] + best_pair[1]
-            )
-            vocab[new_token] = len(vocab)
+        with tqdm(total=vocab_size - len(vocab)) as pbar:
+            while len(vocab) < vocab_size:
+                pair_scores = _compute_pair_scores(freqs=freqs, splits=splits)
+                if not pair_scores:
+                    break
+                best_pair = ("", "")
+                max_score = None
+                for pair, score in pair_scores.items():
+                    if (max_score is None) or (score > max_score):
+                        best_pair = pair
+                        max_score = score            
+                splits = _merge_pair(pair=best_pair, splits=splits)
+                new_token = (
+                    best_pair[0] + best_pair[1][2:]
+                    if best_pair[1].startswith("##")
+                    else best_pair[0] + best_pair[1]
+                )
+                vocab[new_token] = len(vocab)
 
-            pbar.update(1)
+                pbar.update(1)
 
-    with open(save_path, mode="w") as f:
-        json.dump(vocab, f)
+        with open(save_path, mode="w") as f:
+            json.dump(vocab, f)
+        print(f"""Completed building vocabulary! Vocabulary size is {len(vocab):,}.""")
 
-    print(f"""Completed building vocabulary! Vocabulary size is {len(vocab):,}.""")
+    with open(save_path, mode="r") as f:
+        vocab = json.load(f)
+    return vocab
 
 
 def _separate_into_tokens(pretoken, vocab):
@@ -197,6 +206,8 @@ if __name__ == "__main__":
         "Hopefully, you will be able to understand how they are trained and generate tokens.",
     ]
 
-    build_vocabulary(
-        corpus=corpus, vocab_size=120, save_path="/Users/jongbeomkim/Desktop/workspace/transformer_based_models/bert/vocab.json"
+    vocab = build_or_load_vocab(
+        corpus=corpus,
+        vocab_size=120,
+        save_path="./vocab.json"
     )
